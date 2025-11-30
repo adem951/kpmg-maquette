@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/kpmg-maquette/static/css/main.3be13480.css",
+    "main.js": "/kpmg-maquette/static/js/main.b5d6334c.js",
+    "index.html": "/kpmg-maquette/index.html",
+    "main.3be13480.css.map": "/kpmg-maquette/static/css/main.3be13480.css.map",
+    "main.b5d6334c.js.map": "/kpmg-maquette/static/js/main.b5d6334c.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.3be13480.css",
+    "static/js/main.b5d6334c.js"
+  ]
+}
