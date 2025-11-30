@@ -1,0 +1,285 @@
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.app-header {
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.logo-icon {
+  font-size: 40px;
+  background: linear-gradient(135deg, #0055b8 0%, #00338d 100%);
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  filter: grayscale(0);
+}
+
+.logo-text h1 {
+  color: #00338d;
+  font-size: 28px;
+  margin: 0;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+.logo-text span {
+  color: #666;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.nav-menu {
+  display: flex;
+  gap: 10px;
+}
+
+.nav-item {
+  background: transparent;
+  border: none;
+  color: #666;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.nav-item:hover {
+  background: #f0f7ff;
+  color: #0055b8;
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, #0055b8 0%, #00338d 100%);
+  color: white;
+}
+
+.app-main {
+  flex: 1;
+  padding: 30px 40px;
+}
+
+.main-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 450px 1fr;
+  gap: 30px;
+  align-items: start;
+}
+
+.left-panel {
+  position: sticky;
+  top: 120px;
+}
+
+.welcome-section {
+  background: white;
+  padding: 25px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.welcome-section h2 {
+  color: #00338d;
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+
+.welcome-section p {
+  color: #666;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.right-panel {
+  min-height: 600px;
+}
+
+.placeholder-content {
+  background: white;
+  border-radius: 12px;
+  padding: 60px 40px;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.placeholder-icon {
+  font-size: 80px;
+  margin-bottom: 20px;
+  opacity: 0.5;
+}
+
+.placeholder-content h3 {
+  color: #00338d;
+  font-size: 24px;
+  margin-bottom: 10px;
+}
+
+.placeholder-content p {
+  color: #666;
+  font-size: 16px;
+  margin-bottom: 30px;
+}
+
+.example-queries {
+  background: #f8f9fa;
+  padding: 25px;
+  border-radius: 8px;
+  text-align: left;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.example-queries h4 {
+  color: #00338d;
+  font-size: 16px;
+  margin-bottom: 15px;
+}
+
+.example-queries ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.example-queries li {
+  color: #666;
+  font-size: 14px;
+  padding: 10px 15px;
+  margin-bottom: 8px;
+  background: white;
+  border-radius: 6px;
+  border-left: 3px solid #0055b8;
+}
+
+.results-container {
+  animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.app-footer {
+  background: white;
+  border-top: 1px solid #e0e0e0;
+  padding: 25px 40px;
+  margin-top: 40px;
+}
+
+.footer-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.footer-content p {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+}
+
+.footer-links {
+  display: flex;
+  gap: 20px;
+}
+
+.footer-links a {
+  color: #666;
+  text-decoration: none;
+  font-size: 14px;
+  transition: color 0.3s;
+}
+
+.footer-links a:hover {
+  color: #0055b8;
+}
+
+@media (max-width: 1200px) {
+  .main-container {
+    grid-template-columns: 1fr;
+  }
+
+  .left-panel {
+    position: static;
+  }
+
+  .right-panel {
+    order: 2;
+  }
+}
+
+@media (max-width: 768px) {
+  .header-content {
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px;
+  }
+
+  .nav-menu {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .app-main {
+    padding: 20px;
+  }
+
+  .welcome-section {
+    padding: 20px;
+  }
+
+  .welcome-section h2 {
+    font-size: 18px;
+  }
+
+  .placeholder-content {
+    padding: 40px 20px;
+  }
+
+  .footer-content {
+    flex-direction: column;
+    text-align: center;
+  }
+}
