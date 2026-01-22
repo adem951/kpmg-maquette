@@ -19,7 +19,6 @@ import os
 # Import des services
 from services.tavily_service import TavilyService
 from services.llm_service import LLMService
-from services.data_service import DataService
 
 # Initialisation de l'application
 app = FastAPI(
@@ -50,7 +49,6 @@ if not openai_api_key:
 
 tavily_service = TavilyService(api_key=tavily_api_key)
 llm_service = LLMService(api_key=openai_api_key)
-data_service = DataService()
 
 # Modèles Pydantic
 class SearchRequest(BaseModel):
@@ -102,7 +100,6 @@ async def health_check():
         "services": {
             "tavily": tavily_service.is_configured(),
             "llm": llm_service.is_configured(),
-            "data": True
         }
     }
 
@@ -154,14 +151,9 @@ async def generate_analysis(request: AnalysisRequest):
                 max_results=5
             )
             
-            # Recherche de données quantitatives
-            data_results = await tavily_service.search(
-                query=f"{request.query} chiffres statistiques taille marché",
-                mode="data",
-                max_results=5
-            )
             
-            sources = general_results + data_results
+            
+            sources = general_results
             web_context = tavily_service.format_context_for_llm(sources)
         
         # Étape 2: Génération de l'analyse par le LLM
@@ -171,17 +163,11 @@ async def generate_analysis(request: AnalysisRequest):
             sources=sources
         )
         
-        # Étape 3: Formatage des données pour les graphiques
-        quantitative_data = data_service.format_quantitative_data(
-            analysis.get("quantitative", {}),
-            sources
-        )
         
         return {
             "success": True,
             "analysis": {
                 "qualitative": analysis.get("qualitative", {}),
-                "quantitative": quantitative_data,
                 "sources": sources,
                 "generated_at": datetime.now().isoformat()
             }
@@ -189,29 +175,6 @@ async def generate_analysis(request: AnalysisRequest):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/market-data")
-async def get_market_data():
-    """
-    Récupère les données de marché (préparé pour connexion BDD future)
-    """
-    try:
-        data = await data_service.get_market_data()
-        return {"success": True, "data": data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/market-data")
-async def save_market_data(data: dict):
-    """
-    Sauvegarde les données de marché (préparé pour connexion BDD future)
-    """
-    try:
-        result = await data_service.save_market_data(data)
-        return {"success": True, "message": "Data saved successfully", "id": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn
