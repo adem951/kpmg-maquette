@@ -9,12 +9,10 @@ from pydantic import BaseModel
 from typing import Literal, Optional, List
 from datetime import datetime
 import os
+from dotenv import load_dotenv
 
-# Les variables d'environnement sont lues directement depuis le système
-# Pas besoin de fichier .env
-# Configurer les variables sous Windows PowerShell:
-# $env:TAVILY_API_KEY="votre_clé_tavily"
-# $env:OPENAI_API_KEY="votre_clé_openai"
+# Charger les variables d'environnement depuis le fichier .env
+load_dotenv()
 
 # Import des services
 from services.tavily_service import TavilyService
@@ -47,8 +45,9 @@ if not tavily_api_key:
 if not openai_api_key:
     print("⚠️ OPENAI_API_KEY non définie - Mode mock activé")
 
+# Initialiser les services (LLM reçoit tavily_service pour l'intégration)
 tavily_service = TavilyService(api_key=tavily_api_key)
-llm_service = LLMService(api_key=openai_api_key)
+llm_service = LLMService(api_key=openai_api_key, tavily_service=tavily_service)
 
 # Modèles Pydantic
 class SearchRequest(BaseModel):

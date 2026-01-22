@@ -55,16 +55,29 @@ const ChatBox = ({ onSendMessage }) => {
       
       setIsTyping(false);
       
+      // Vérifier si c'est un refus d'intention (détection basée sur le contenu)
+      const isIntentionRefused = response.includes("**Demande non compatible avec l'analyse de marché**");
+      
       // Passer la réponse au composant parent pour l'affichage dans QualitativeAnalysis
       onSendMessage(query, response);
       
-      // Message de confirmation
-      const completionMessage = {
-        id: messages.length + 3,
-        text: `✅ Votre analyse est prête ! Consultez les résultats dans la section "Données Qualitatives".`,
-        sender: 'bot',
-        timestamp: new Date()
-      };
+      // Message de confirmation adapté selon si l'intention est refusée ou acceptée
+      let completionMessage;
+      if (isIntentionRefused) {
+        completionMessage = {
+          id: messages.length + 3,
+          text: `⚠️ Votre demande ne correspond pas à une analyse de marché. Veuillez reformuler en précisant le marché ou secteur à analyser. Consultez les suggestions dans la section "Données Qualitatives".`,
+          sender: 'bot',
+          timestamp: new Date()
+        };
+      } else {
+        completionMessage = {
+          id: messages.length + 3,
+          text: `✅ Votre analyse est prête ! Consultez les résultats dans la section "Données Qualitatives".`,
+          sender: 'bot',
+          timestamp: new Date()
+        };
+      }
       setMessages(prev => [...prev, completionMessage]);
       
     } catch (error) {
