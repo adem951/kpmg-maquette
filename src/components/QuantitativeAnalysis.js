@@ -41,6 +41,7 @@ const QuantitativeAnalysis = ({ data }) => {
         backgroundColor: 'rgba(0, 85, 184, 0.8)',
         borderColor: 'rgba(0, 85, 184, 1)',
         borderWidth: 2,
+        sources: marketSize.sources || []
       }
     ]
   };
@@ -57,6 +58,17 @@ const QuantitativeAnalysis = ({ data }) => {
         font: {
           size: 16,
           weight: 'bold'
+        }
+      },
+      tooltip: {
+        callbacks: {
+          afterLabel: function(context) {
+            const sources = context.dataset.sources || [];
+            if (sources.length > 0 && sources[context.dataIndex]) {
+              return `Source: ${sources[context.dataIndex]}`;
+            }
+            return '';
+          }
         }
       }
     },
@@ -81,7 +93,8 @@ const QuantitativeAnalysis = ({ data }) => {
         data: marketShare.data,
         backgroundColor: marketShare.colors,
         borderWidth: 2,
-        borderColor: '#fff'
+        borderColor: '#fff',
+        sources: marketShare.sources || []
       }
     ]
   };
@@ -104,6 +117,13 @@ const QuantitativeAnalysis = ({ data }) => {
         callbacks: {
           label: function(context) {
             return `${context.label}: ${context.parsed}%`;
+          },
+          afterLabel: function(context) {
+            const sources = context.dataset.sources || [];
+            if (sources.length > 0) {
+              return `Sources: ${sources.slice(0, 2).join(', ')}`;
+            }
+            return '';
           }
         }
       }

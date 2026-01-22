@@ -4,11 +4,18 @@ import './QualitativeAnalysis.css';
 const QualitativeAnalysis = ({ data }) => {
   if (!data) return null;
 
-  const { title, sections, recommendation } = data;
+  const { title, sections, recommendation, sources } = data;
 
   return (
     <div className="qualitative-analysis">
       <h2>📝 {title}</h2>
+      
+      {sources && sources.length > 0 && (
+        <div className="sources-banner">
+          <span className="sources-icon">🔗</span>
+          <span>{sources.length} sources fiables consultées</span>
+        </div>
+      )}
       
       <div className="analysis-sections">
         {sections.map((section, index) => (
@@ -30,6 +37,21 @@ const QualitativeAnalysis = ({ data }) => {
         </div>
         <p>{recommendation}</p>
       </div>
+
+      {sources && sources.length > 0 && (
+        <div className="sources-list">
+          <h3>📚 Sources consultées</h3>
+          <ul>
+            {sources.slice(0, 5).map((source, index) => (
+              <li key={index}>
+                <a href={source} target="_blank" rel="noopener noreferrer">
+                  {source}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="analysis-footer">
         <div className="footer-info">

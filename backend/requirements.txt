@@ -1,0 +1,10 @@
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+httpx==0.26.0
+# python-dotenv==1.0.0  # Retiré - on utilise os.getenv() directement
+# Removed langchain/langchain-openai and tavily-python to avoid dependency conflicts
+# Add them later explicitly if needed with compatible versions
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+pymongo==4.6.1

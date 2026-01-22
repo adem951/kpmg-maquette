@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ChatBox.css';
+import { generateAnalysis, searchGeneral, searchData } from '../services/apiService';
 
 const ChatBox = ({ onSendMessage }) => {
   const [messages, setMessages] = useState([
@@ -12,6 +13,7 @@ const ChatBox = ({ onSendMessage }) => {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [searchMode, setSearchMode] = useState('general'); // 'general' ou 'data'
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -22,13 +24,15 @@ const ChatBox = ({ onSendMessage }) => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (inputValue.trim() === '') return;
 
+    const query = inputValue;
+    
     // Ajouter le message de l'utilisateur
     const userMessage = {
       id: messages.length + 1,
-      text: inputValue,
+      text: query,
       sender: 'user',
       timestamp: new Date()
     };
@@ -37,30 +41,47 @@ const ChatBox = ({ onSendMessage }) => {
     setInputValue('');
     setIsTyping(true);
 
-    // Simuler le traitement de l'IA
-    setTimeout(() => {
-      const botMessage = {
+    try {
+      // Message de traitement
+      const processingMessage = {
         id: messages.length + 2,
-        text: "Je traite votre demande et prépare l'analyse de marché...",
+        text: "🔍 Je recherche des informations fiables et prépare l'analyse de marché...",
         sender: 'bot',
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, botMessage]);
+      setMessages(prev => [...prev, processingMessage]);
 
-      // Déclencher l'analyse après un court délai
-      setTimeout(() => {
-        setIsTyping(false);
-        onSendMessage(inputValue);
-        
-        const completionMessage = {
-          id: messages.length + 3,
-          text: "Votre analyse de marché est prête ! Consultez les résultats ci-dessous. 📊",
-          sender: 'bot',
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, completionMessage]);
-      }, 1500);
-    }, 800);
+      // Appel à l'API pour générer l'analyse
+      const analysis = await generateAnalysis(query, true);
+      
+      setIsTyping(false);
+      
+      // Passer l'analyse au composant parent
+      onSendMessage(query, analysis);
+      
+      // Message de confirmation
+      const completionMessage = {
+        id: messages.length + 3,
+        text: `✅ Votre analyse de marché est prête ! Consultez les résultats ci-dessous.\n\n📊 ${analysis.sources ? analysis.sources.length : 0} sources fiables consultées`,
+        sender: 'bot',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, completionMessage]);
+      
+    } catch (error) {
+      setIsTyping(false);
+      
+      // Message d'erreur
+      const errorMessage = {
+        id: messages.length + 3,
+        text: "❌ Une erreur est survenue lors de la génération de l'analyse. Veuillez réessayer.",
+        sender: 'bot',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      
+      console.error('Erreur lors de la génération de l\'analyse:', error);
+    }
   };
 
   const handleKeyPress = (e) => {
@@ -82,6 +103,10 @@ const ChatBox = ({ onSendMessage }) => {
 
   const handleQuickQuestion = (question) => {
     setInputValue(question);
+  };
+
+  const toggleSearchMode = () => {
+    setSearchMode(prev => prev === 'general' ? 'data' : 'general');
   };
 
   return (
@@ -133,6 +158,23 @@ const ChatBox = ({ onSendMessage }) => {
           ))}
         </div>
       )}
+
+      <div className="search-mode-selector">
+        <button 
+          className={`mode-btn ${searchMode === 'general' ? 'active' : ''}`}
+          onClick={() => setSearchMode('general')}
+          title="Recherche de contexte, tendances et acteurs"
+        >
+          🔍 Mode Général
+        </button>
+        <button 
+          className={`mode-btn ${searchMode === 'data' ? 'active' : ''}`}
+          onClick={() => setSearchMode('data')}
+          title="Recherche de chiffres et statistiques"
+        >
+          📊 Mode Données
+        </button>
+      </div>
 
       <div className="chatbox-input">
         <textarea

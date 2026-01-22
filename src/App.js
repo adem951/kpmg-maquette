@@ -2,22 +2,33 @@ import React, { useState } from 'react';
 import ChatBox from './components/ChatBox';
 import QualitativeAnalysis from './components/QualitativeAnalysis';
 import QuantitativeAnalysis from './components/QuantitativeAnalysis';
-import { getAnalysis } from './mockData';
 import './App.css';
 
 function App() {
   const [currentAnalysis, setCurrentAnalysis] = useState(null);
   const [showResults, setShowResults] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleAnalysisRequest = (query) => {
-    // Simuler le chargement
+  const handleAnalysisRequest = (query, analysis) => {
+    setIsLoading(true);
+    setError(null);
     setShowResults(false);
     
-    setTimeout(() => {
-      const analysis = getAnalysis(query);
+    // Si l'analyse est fournie directement (depuis l'API)
+    if (analysis) {
       setCurrentAnalysis(analysis);
       setShowResults(true);
-    }, 1000);
+      setIsLoading(false);
+    } else {
+      // Fallback vers les données mock si l'API échoue
+      setTimeout(() => {
+        setCurrentAnalysis(null);
+        setShowResults(false);
+        setIsLoading(false);
+        setError("Impossible de récupérer l'analyse. Veuillez réessayer.");
+      }, 1000);
+    }
   };
 
   return (
@@ -50,7 +61,20 @@ function App() {
           </div>
 
           <div className="right-panel">
-            {!showResults ? (
+            {isLoading ? (
+              <div className="loading-content">
+                <div className="loader"></div>
+                <h3>Analyse en cours...</h3>
+                <p>Recherche d'informations et génération de l'analyse de marché</p>
+              </div>
+            ) : error ? (
+              <div className="error-content">
+                <div className="error-icon">⚠️</div>
+                <h3>Erreur</h3>
+                <p>{error}</p>
+                <button onClick={() => setError(null)}>Réessayer</button>
+              </div>
+            ) : !showResults ? (
               <div className="placeholder-content">
                 <div className="placeholder-icon">🔍</div>
                 <h3>Aucune analyse en cours</h3>
