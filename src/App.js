@@ -10,14 +10,14 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleAnalysisRequest = (query, analysis) => {
+  const handleAnalysisRequest = (query, response) => {
     setIsLoading(true);
     setError(null);
     setShowResults(false);
     
-    // Si l'analyse est fournie directement (depuis l'API)
-    if (analysis) {
-      setCurrentAnalysis(analysis);
+    // Si la réponse est fournie directement (depuis l'API LLM)
+    if (response) {
+      setCurrentAnalysis({ llmResponse: response, query: query });
       setShowResults(true);
       setIsLoading(false);
     } else {
@@ -92,8 +92,8 @@ function App() {
               <div className="results-container">
                 {currentAnalysis && (
                   <>
-                    <QualitativeAnalysis data={currentAnalysis.qualitative} />
-                    <QuantitativeAnalysis data={currentAnalysis.quantitative} />
+                    <QualitativeAnalysis analysisData={currentAnalysis.llmResponse} />
+                    <QuantitativeAnalysis />
                   </>
                 )}
               </div>

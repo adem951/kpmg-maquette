@@ -64,6 +64,33 @@ export const searchData = async (query, maxResults = 10) => {
 };
 
 /**
+ * Analyse l'entrée utilisateur depuis la ChatBox avec le LLM
+ */
+export const analyzeChatInput = async (message) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erreur API: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.response;
+  } catch (error) {
+    console.error('Erreur lors de l\'analyse du message:', error);
+    throw error;
+  }
+};
+
+/**
  * Génère une analyse de marché complète
  */
 export const generateAnalysis = async (query, includeWebSearch = true) => {
@@ -164,6 +191,7 @@ export const checkHealth = async () => {
 export default {
   searchGeneral,
   searchData,
+  analyzeChatInput,
   generateAnalysis,
   getMarketData,
   saveMarketData,

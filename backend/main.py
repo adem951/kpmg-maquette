@@ -60,6 +60,9 @@ class AnalysisRequest(BaseModel):
     query: str
     include_web_search: bool = True
 
+class ChatRequest(BaseModel):
+    message: str
+
 class SearchResult(BaseModel):
     title: str
     url: str
@@ -130,6 +133,23 @@ async def search_data(request: SearchRequest):
             max_results=request.max_results
         )
         return {"success": True, "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chat")
+async def analyze_chat_input(request: ChatRequest):
+    """
+    Analyse l'entrée utilisateur depuis la ChatBox avec le LLM
+    """
+    try:
+        response = await llm_service.analyze_user_input(request.message)
+        
+        return {
+            "success": True,
+            "response": response,
+            "generated_at": datetime.now().isoformat()
+        }
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

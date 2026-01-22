@@ -1,22 +1,87 @@
 """
 Service LLM pour générer les analyses de marché
-Utilise LangChain et OpenAI pour orchestrer l'analyse
+Utilise OpenAI GPT pour orchestrer l'analyse
 """
 
 from typing import List, Dict, Optional
 import json
+import openai
+import os
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement
+load_dotenv()
 
 
 class LLMService:
     """Service pour générer des analyses avec un LLM"""
     
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.model = "gpt-4"  # ou "gpt-3.5-turbo"
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.model = "gpt-4o-mini"  # Modèle plus récent et économique
+        
+        # Configurer OpenAI
+        if self.api_key:
+            openai.api_key = self.api_key
     
     def is_configured(self) -> bool:
         """Vérifie si le service est configuré"""
         return self.api_key is not None and self.api_key != "your_openai_api_key_here"
+    
+    async def analyze_user_input(self, user_input: str) -> str:
+        """
+        Analyse l'entrée utilisateur avec un prompt système simple
+        
+        Args:
+            user_input: La requête de l'utilisateur depuis la ChatBox
+        
+        Returns:
+            str: Réponse générée par le LLM
+        """
+        
+        if not self.is_configured():
+            return self._generate_mock_response(user_input)
+        
+        try:
+            # Prompt système pour l'outil d'analyse de marché
+            system_prompt = """Tu es un outil d'analyse de marché expert. 
+            Tu aides les utilisateurs à analyser les marchés, les tendances, les concurrents et les opportunités d'affaires.
+            Réponds de manière structurée, professionnelle et actionnable.
+            Utilise des informations factuelles quand possible et indique clairement quand tu fais des estimations ou des hypothèses."""
+            
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ],
+                max_tokens=1000,
+                temperature=0.7
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            print(f"Erreur lors de l'appel à OpenAI: {e}")
+            return self._generate_mock_response(user_input)
+    
+    def _generate_mock_response(self, user_input: str) -> str:
+        """Génère une réponse mock pour les tests"""
+        return f"""**Analyse de marché pour: {user_input}**
+
+Voici une analyse préliminaire basée sur votre demande:
+
+**Tendances actuelles:**
+- Le marché montre des signes de croissance continue
+- L'innovation technologique reste un facteur clé
+- Les consommateurs privilégient la durabilité
+
+**Recommandations:**
+- Surveiller les évolutions réglementaires
+- Investir dans les technologies émergentes
+- Développer une stratégie de différenciation
+
+*Note: Cette analyse est générée en mode simulation. Configurez une clé API OpenAI pour obtenir des analyses plus détaillées.*"""
     
     async def generate_analysis(
         self,
