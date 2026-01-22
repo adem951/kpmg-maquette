@@ -255,3 +255,35 @@
 .chatbox-messages::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+/* Mode de recherche */
+.search-mode-selector {
+  display: flex;
+  gap: 8px;
+  padding: 10px 15px;
+  border-top: 1px solid #e0e0e0;
+  background: white;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-btn:hover {
+  background: #f5f5f5;
+  border-color: #0055B8;
+}
+
+.mode-btn.active {
+  background: #0055B8;
+  color: white;
+  border-color: #0055B8;
+  font-weight: 500;
+}
