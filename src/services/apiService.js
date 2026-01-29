@@ -83,6 +83,7 @@ export const analyzeChatInput = async (message) => {
     }
 
     const data = await response.json();
+    // Retourner l'objet complet avec response et sources
     return data.response;
   } catch (error) {
     console.error('Erreur lors de l\'analyse du message:', error);

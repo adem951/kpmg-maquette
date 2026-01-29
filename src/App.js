@@ -17,7 +17,18 @@ function App() {
     
     // Si la réponse est fournie directement (depuis l'API LLM)
     if (response) {
-      setCurrentAnalysis({ llmResponse: response, query: query });
+      // Gérer le nouveau format avec sources et datasets
+      const analysisData = {
+        llmResponse: typeof response === 'object' && response.response ? response.response : response,
+        sources: typeof response === 'object' && response.sources ? response.sources : [],
+        datasets: typeof response === 'object' && response.datasets ? response.datasets : [],
+        query: query
+      };
+      
+      console.log('📊 App.js - Données d\'analyse:', analysisData);
+      console.log('📊 App.js - Datasets:', analysisData.datasets);
+      
+      setCurrentAnalysis(analysisData);
       setShowResults(true);
       setIsLoading(false);
     } else {
@@ -93,7 +104,10 @@ function App() {
                 {currentAnalysis && (
                   <>
                     <QualitativeAnalysis analysisData={currentAnalysis.llmResponse} />
-                    <QuantitativeAnalysis />
+                    <QuantitativeAnalysis 
+                      sources={currentAnalysis.sources || []} 
+                      datasets={currentAnalysis.datasets || []}
+                    />
                   </>
                 )}
               </div>

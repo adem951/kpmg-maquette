@@ -108,7 +108,8 @@ class TavilyService:
         try:
             # Adapter la requête selon le mode
             if mode == "data":
-                search_query = f"{query} statistiques chiffres données marché"
+                # Recherche spécifique de datasets CSV/Excel
+                search_query = f"{query} csv excel dataset données statistiques data"
                 search_depth = "advanced"
             else:
                 search_query = query

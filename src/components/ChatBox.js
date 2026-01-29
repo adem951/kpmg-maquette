@@ -51,15 +51,21 @@ const ChatBox = ({ onSendMessage }) => {
       setMessages(prev => [...prev, processingMessage]);
 
       // Appel à l'API pour analyser l'entrée utilisateur
-      const response = await analyzeChatInput(query);
+      const apiResponse = await analyzeChatInput(query);
+      
+      console.log('📊 Réponse API complète:', apiResponse);
+      console.log('📊 Datasets reçus:', apiResponse?.datasets);
       
       setIsTyping(false);
       
-      // Vérifier si c'est un refus d'intention (détection basée sur le contenu)
-      const isIntentionRefused = response.includes("**Demande non compatible avec l'analyse de marché**");
+      // Gérer le nouveau format (objet avec response et sources ou juste string)
+      const responseText = typeof apiResponse === 'object' && apiResponse.response ? apiResponse.response : apiResponse;
       
-      // Passer la réponse au composant parent pour l'affichage dans QualitativeAnalysis
-      onSendMessage(query, response);
+      // Vérifier si c'est un refus d'intention (détection basée sur le contenu)
+      const isIntentionRefused = responseText.includes("**Demande non compatible avec l'analyse de marché**");
+      
+      // Passer la réponse complète au composant parent pour l'affichage dans QualitativeAnalysis
+      onSendMessage(query, apiResponse);
       
       // Message de confirmation adapté selon si l'intention est refusée ou acceptée
       let completionMessage;
@@ -71,9 +77,17 @@ const ChatBox = ({ onSendMessage }) => {
           timestamp: new Date()
         };
       } else {
+        // Indiquer le nombre de sources et datasets si disponibles
+        const sourcesCount = typeof apiResponse === 'object' && apiResponse.sources ? apiResponse.sources.length : 0;
+        const datasetsCount = typeof apiResponse === 'object' && apiResponse.datasets ? apiResponse.datasets.length : 0;
+        
+        let detailsText = '';
+        if (sourcesCount > 0) detailsText += ` ${sourcesCount} source(s)`;
+        if (datasetsCount > 0) detailsText += ` ${datasetsCount > 0 && sourcesCount > 0 ? '+ ' : ''}${datasetsCount} dataset(s)`;
+        
         completionMessage = {
           id: messages.length + 3,
-          text: `✅ Votre analyse est prête ! Consultez les résultats dans la section "Données Qualitatives".`,
+          text: `✅ Votre analyse est prête !${detailsText ? ` (${detailsText})` : ''} Consultez les résultats ci-dessous.`,
           sender: 'bot',
           timestamp: new Date()
         };

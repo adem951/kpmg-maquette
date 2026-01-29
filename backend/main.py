@@ -17,6 +17,7 @@ load_dotenv()
 # Import des services
 from services.tavily_service import TavilyService
 from services.llm_service import LLMService
+from services.data_service import DataService
 
 # Initialisation de l'application
 app = FastAPI(
@@ -48,6 +49,7 @@ if not openai_api_key:
 # Initialiser les services (LLM reçoit tavily_service pour l'intégration)
 tavily_service = TavilyService(api_key=tavily_api_key)
 llm_service = LLMService(api_key=openai_api_key, tavily_service=tavily_service)
+data_service = DataService()
 
 # Modèles Pydantic
 class SearchRequest(BaseModel):
@@ -139,13 +141,38 @@ async def search_data(request: SearchRequest):
 async def analyze_chat_input(request: ChatRequest):
     """
     Analyse l'entrée utilisateur depuis la ChatBox avec le LLM
+    Retourne l'analyse textuelle + les datasets trouvés
     """
     try:
         response = await llm_service.analyze_user_input(request.message)
         
+        # Traiter les datasets trouvés (télécharger et parser)
+        datasets_parsed = []
+        if "datasets" in response and response["datasets"]:
+            print(f"📊 Traitement de {len(response['datasets'])} datasets...")
+            for dataset_info in response["datasets"][:3]:  # Limiter à 3 datasets
+                print(f"  → Téléchargement de: {dataset_info['url']}")
+                parsed = await data_service.download_and_parse(dataset_info["url"])
+                if parsed:
+                    datasets_parsed.append({
+                        "title": dataset_info["title"],
+                        "url": dataset_info["url"],
+                        "format": parsed["format"],
+                        "columns": parsed["columns"],
+                        "preview": parsed["preview"],
+                        "total_rows": parsed["total_rows"]
+                    })
+                    print(f"  ✅ Dataset parsé: {len(parsed['preview'])} lignes preview")
+        
+        print(f"📊 Total datasets parsés: {len(datasets_parsed)}")
+        
         return {
             "success": True,
-            "response": response,
+            "response": {
+                "response": response.get("response", ""),
+                "sources": response.get("sources", []),
+                "datasets": datasets_parsed
+            },
             "generated_at": datetime.now().isoformat()
         }
     

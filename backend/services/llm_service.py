@@ -8,6 +8,7 @@ import json
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
+import asyncio
 
 # Charger les variables d'environnement depuis le fichier .env du backend
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -232,7 +233,7 @@ Format souhaité :
         
         if not is_market_analysis:
             print(f"❌ Intention non valide : {explanation}")
-            return f"""**Demande non compatible avec l'analyse de marché**
+            return {"response": f"""**Demande non compatible avec l'analyse de marché**
 
 Votre demande ne semble pas correspondre à une analyse de marché.
 
@@ -249,42 +250,182 @@ Votre demande ne semble pas correspondre à une analyse de marché.
 • "Opportunités dans le secteur de l'intelligence artificielle"
 • "Analyse de la concurrence dans le marché du luxe"
 
-N'hésitez pas à reformuler votre demande ! 🔍"""
+N'hésitez pas à reformuler votre demande ! 🔍""", "sources": [], "datasets": []}
         
         print(f"✅ Intention valide : {explanation}")
         
         # Étape 2 : Enrichissement du prompt
         enriched_query = await self.enrich_market_query(user_input)
         
-        # Étape 3 : Recherche Tavily avec le prompt enrichi
+        # Étape 3 : Recherches Tavily en parallèle (texte + datasets)
         if self.tavily_service and self.tavily_service.is_configured():
-            print(f"🌐 Recherche Tavily avec : {enriched_query}")
+            print(f"🌐 Recherche Tavily (parallèle) avec : {enriched_query}")
             try:
-                tavily_results = await self.tavily_service.search(
+                # Lancer les deux recherches en parallèle
+                tavily_general_task = self.tavily_service.search(
                     query=enriched_query,
                     mode="general",
                     max_results=5
                 )
                 
-                print(f"📊 Tavily a retourné {len(tavily_results)} résultats")
+                tavily_data_task = self.tavily_service.search(
+                    query=enriched_query,
+                    mode="data",
+                    max_results=5
+                )
                 
-                # Si Tavily ne retourne aucun résultat, utiliser le LLM direct
-                if not tavily_results or len(tavily_results) == 0:
+                # Attendre les deux résultats en parallèle
+                tavily_general_results, tavily_data_results = await asyncio.gather(
+                    tavily_general_task,
+                    tavily_data_task,
+                    return_exceptions=True
+                )
+                
+                # Gérer les erreurs potentielles
+                if isinstance(tavily_general_results, Exception):
+                    print(f"⚠️ Erreur recherche générale: {tavily_general_results}")
+                    tavily_general_results = []
+                
+                if isinstance(tavily_data_results, Exception):
+                    print(f"⚠️ Erreur recherche datasets: {tavily_data_results}")
+                    tavily_data_results = []
+                
+                print(f"📊 Tavily général: {len(tavily_general_results)} résultats")
+                print(f"📊 Tavily datasets: {len(tavily_data_results)} résultats")
+                
+                # Si aucun résultat, utiliser le LLM direct
+                if (not tavily_general_results or len(tavily_general_results) == 0) and \
+                   (not tavily_data_results or len(tavily_data_results) == 0):
                     print("⚠️ Aucun résultat Tavily - Basculement vers LLM direct")
-                    return await self._direct_llm_response(user_input)
+                    response = await self._direct_llm_response(user_input)
+                    return {"response": response, "sources": [], "datasets": []}
                 
-                # Étape 4 : Reformulation de la réponse Tavily
-                formatted_response = await self.format_tavily_response(tavily_results, user_input)
-                return formatted_response
+                # Étape 4 : Reformulation de la réponse Tavily (utiliser résultats généraux)
+                formatted_response = await self.format_tavily_response(tavily_general_results, user_input)
+                
+                # Préparer les sources pour le frontend
+                sources_data = [{
+                    "title": result.title,
+                    "url": result.url
+                } for result in tavily_general_results]
+                
+                # Préparer les datasets (URLs vers CSV/Excel trouvées)
+                datasets_data = [{
+                    "title": result.title,
+                    "url": result.url,
+                    "type": self._detect_file_type(result.url)
+                } for result in tavily_data_results if self._is_dataset_url(result.url)]
+                
+                print(f"📊 Datasets bruts trouvés: {len(datasets_data)}")
+                
+                # Valider la pertinence des datasets avec le LLM
+                if len(datasets_data) > 0:
+                    datasets_data = await self._validate_datasets_relevance(datasets_data, user_input)
+                    print(f"✅ Datasets pertinents après validation: {len(datasets_data)}")
+                
+                # Retourner avec sources et datasets
+                return {
+                    "response": formatted_response,
+                    "sources": sources_data,
+                    "datasets": datasets_data
+                }
                 
             except Exception as e:
                 print(f"⚠️ Erreur Tavily : {e}")
                 # Fallback : réponse directe du LLM sans Tavily
-                return await self._direct_llm_response(user_input)
+                response = await self._direct_llm_response(user_input)
+                return {"response": response, "sources": [], "datasets": []}
         else:
             print("⚠️ Tavily non configuré - Réponse LLM directe")
             # Fallback : réponse directe du LLM sans Tavily
-            return await self._direct_llm_response(user_input)
+            response = await self._direct_llm_response(user_input)
+            return {"response": response, "sources": [], "datasets": []}
+    
+    def _is_dataset_url(self, url: str) -> bool:
+        """Vérifie si une URL pointe vers un dataset"""
+        url_lower = url.lower()
+        return any(url_lower.endswith(ext) for ext in ['.csv', '.xlsx', '.xls'])
+    
+    def _detect_file_type(self, url: str) -> str:
+        """Détecte le type de fichier depuis l'URL"""
+        url_lower = url.lower()
+        if url_lower.endswith('.csv'):
+            return 'csv'
+        elif url_lower.endswith(('.xlsx', '.xls')):
+            return 'excel'
+        return 'unknown'
+    
+    async def _validate_datasets_relevance(self, datasets: List[Dict], user_query: str) -> List[Dict]:
+        """
+        Valide la pertinence des datasets trouvés par rapport à la requête utilisateur
+        
+        Args:
+            datasets: Liste des datasets trouvés avec title et url
+            user_query: La requête originale de l'utilisateur
+        
+        Returns:
+            Liste filtrée des datasets pertinents uniquement
+        """
+        
+        if not self.is_configured():
+            # En mode non configuré, retourner tous les datasets
+            return datasets
+        
+        try:
+            # Préparer la liste des datasets pour le LLM
+            datasets_info = "\n".join([
+                f"{i+1}. Titre: {ds['title']}\n   URL: {ds['url']}"
+                for i, ds in enumerate(datasets)
+            ])
+            
+            validation_prompt = f"""Tu es un expert en évaluation de pertinence de données pour l'analyse de marché.
+
+Requête utilisateur: "{user_query}"
+
+Datasets trouvés:
+{datasets_info}
+
+Ton rôle: Évaluer si chaque dataset est PERTINENT pour répondre à la requête.
+
+Critères de pertinence:
+- Le dataset doit contenir des données liées au secteur/marché mentionné
+- Le dataset doit être récent ou historiquement pertinent
+- Le titre/URL suggère des données quantitatives exploitables
+
+Réponds UNIQUEMENT par un JSON avec ce format exact:
+{{
+  "relevant_indices": [1, 3],  // Indices des datasets pertinents (commence à 1)
+  "explanation": "Dataset 1 pertinent car..., Dataset 2 non pertinent car..."
+}}
+
+Ne réponds QUE par le JSON, rien d'autre."""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": validation_prompt}
+                ],
+                max_tokens=300,
+                temperature=0.3
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            result = json.loads(result_text)
+            
+            relevant_indices = result.get("relevant_indices", [])
+            explanation = result.get("explanation", "")
+            
+            print(f"🔍 Validation LLM: {explanation}")
+            
+            # Filtrer les datasets selon les indices pertinents (convertir de 1-indexed à 0-indexed)
+            relevant_datasets = [datasets[i-1] for i in relevant_indices if 0 < i <= len(datasets)]
+            
+            return relevant_datasets
+            
+        except Exception as e:
+            print(f"⚠️ Erreur validation pertinence: {e}")
+            # En cas d'erreur, retourner tous les datasets pour ne pas bloquer
+            return datasets
     
     async def _direct_llm_response(self, user_input: str) -> str:
         """
