@@ -10,14 +10,25 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleAnalysisRequest = (query, analysis) => {
+  const handleAnalysisRequest = (query, response) => {
     setIsLoading(true);
     setError(null);
     setShowResults(false);
     
-    // Si l'analyse est fournie directement (depuis l'API)
-    if (analysis) {
-      setCurrentAnalysis(analysis);
+    // Si la réponse est fournie directement (depuis l'API LLM)
+    if (response) {
+      // Gérer le nouveau format avec sources et datasets
+      const analysisData = {
+        llmResponse: typeof response === 'object' && response.response ? response.response : response,
+        sources: typeof response === 'object' && response.sources ? response.sources : [],
+        datasets: typeof response === 'object' && response.datasets ? response.datasets : [],
+        query: query
+      };
+      
+      console.log('📊 App.js - Données d\'analyse:', analysisData);
+      console.log('📊 App.js - Datasets:', analysisData.datasets);
+      
+      setCurrentAnalysis(analysisData);
       setShowResults(true);
       setIsLoading(false);
     } else {
@@ -92,8 +103,11 @@ function App() {
               <div className="results-container">
                 {currentAnalysis && (
                   <>
-                    <QualitativeAnalysis data={currentAnalysis.qualitative} />
-                    <QuantitativeAnalysis data={currentAnalysis.quantitative} />
+                    <QualitativeAnalysis analysisData={currentAnalysis.llmResponse} />
+                    <QuantitativeAnalysis 
+                      sources={currentAnalysis.sources || []} 
+                      datasets={currentAnalysis.datasets || []}
+                    />
                   </>
                 )}
               </div>

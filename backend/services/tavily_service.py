@@ -65,8 +65,8 @@ class TavilyService:
             if domain in url_lower:
                 return "news", 85
         
-        # Autres sources (score moyen)
-        return "other", 60
+        # Autres sources (score acceptable pour des analyses générales)
+        return "other", 70
     
     def _filter_by_reliability(
         self, 
@@ -74,7 +74,14 @@ class TavilyService:
         min_score: int = 70
     ) -> List[SearchResult]:
         """Filtre les résultats selon le score de fiabilité"""
-        return [r for r in results if r.reliability_score >= min_score]
+        filtered = [r for r in results if r.reliability_score >= min_score]
+        print(f"🔍 Filtrage : {len(results)} résultats -> {len(filtered)} résultats (seuil: {min_score})")
+        
+        # Si trop peu de résultats après filtrage, afficher les scores
+        if len(filtered) < 3:
+            print(f"⚠️ Scores des résultats: {[r.reliability_score for r in results]}")
+        
+        return filtered
     
     async def search(
         self,
@@ -94,14 +101,15 @@ class TavilyService:
             Liste de SearchResult
         """
         
-        # Si Tavily n'est pas configuré, utiliser des données mock
+        # Si Tavily n'est pas configuré, lever une exception
         if not self.is_configured():
-            return self._get_mock_results(query, mode, max_results)
+            raise Exception("Tavily n'est pas configuré. Veuillez ajouter une clé API valide.")
         
         try:
             # Adapter la requête selon le mode
             if mode == "data":
-                search_query = f"{query} statistiques chiffres données marché"
+                # Recherche spécifique de datasets CSV/Excel
+                search_query = f"{query} csv excel dataset données statistiques data"
                 search_depth = "advanced"
             else:
                 search_query = query
@@ -122,23 +130,30 @@ class TavilyService:
                 )
                 
                 if response.status_code != 200:
+                    print(f"❌ Tavily API error: {response.status_code}")
+                    print(f"Response: {response.text}")
                     raise Exception(f"Tavily API error: {response.status_code}")
                 
                 data = response.json()
+                print(f"🔍 Réponse Tavily brute: {data}")
                 results = self._parse_tavily_response(data)
                 
                 # Filtrer par fiabilité
                 if mode == "data":
-                    results = self._filter_by_reliability(results, min_score=80)
+                    results = self._filter_by_reliability(results, min_score=75)
                 else:
-                    results = self._filter_by_reliability(results, min_score=70)
+                    results = self._filter_by_reliability(results, min_score=60)
+                
+                # Si aucun résultat après filtrage, garder tous les résultats
+                if len(results) == 0:
+                    print("⚠️ Aucun résultat après filtrage - Conservation de tous les résultats")
+                    results = self._parse_tavily_response(data)
                 
                 return results[:max_results]
         
         except Exception as e:
             print(f"Erreur lors de la recherche Tavily: {e}")
-            # Fallback sur les données mock en cas d'erreur
-            return self._get_mock_results(query, mode, max_results)
+            raise Exception(f"Échec de la recherche Tavily: {str(e)}")
     
     def _get_preferred_domains(self, mode: str) -> List[str]:
         """Retourne les domaines préférés selon le mode"""
@@ -153,7 +168,11 @@ class TavilyService:
         """Parse la réponse de l'API Tavily"""
         results = []
         
-        for item in data.get("results", []):
+        # Vérifier différentes clés possibles dans la réponse
+        results_data = data.get("results", data.get("data", data.get("items", [])))
+        print(f"📋 Nombre de résultats bruts Tavily: {len(results_data)}")
+        
+        for item in results_data:
             source_type, reliability_score = self._classify_source(item.get("url", ""))
             
             result = SearchResult(
@@ -176,56 +195,6 @@ class TavilyService:
             return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         except:
             return None
-    
-    def _get_mock_results(
-        self, 
-        query: str, 
-        mode: str, 
-        max_results: int
-    ) -> List[SearchResult]:
-        """Retourne des résultats mock pour les tests"""
-        mock_results = []
-        
-        if mode == "data":
-            mock_results = [
-                SearchResult(
-                    title=f"Étude de marché - {query}",
-                    url="https://www.statista.com/market-analysis",
-                    snippet=f"Le marché {query} représente une valeur de 150 milliards d'euros en 2024, avec une croissance prévue de 15% d'ici 2026.",
-                    published_at=datetime(2024, 1, 15),
-                    source_type="market_report",
-                    reliability_score=90
-                ),
-                SearchResult(
-                    title=f"Rapport gouvernemental sur {query}",
-                    url="https://www.gov.example/report",
-                    snippet=f"Analyse détaillée du secteur avec données officielles et projections sur 5 ans.",
-                    published_at=datetime(2024, 3, 1),
-                    source_type="gov_data",
-                    reliability_score=95
-                ),
-            ]
-        else:
-            mock_results = [
-                SearchResult(
-                    title=f"Tendances du marché - {query}",
-                    url="https://www.lesechos.fr/article",
-                    snippet=f"Les principales tendances du secteur {query} montrent une transformation digitale accélérée et de nouveaux acteurs émergents.",
-                    published_at=datetime(2024, 2, 10),
-                    source_type="news",
-                    reliability_score=85
-                ),
-                SearchResult(
-                    title=f"Analyse KPMG - {query}",
-                    url="https://www.kpmg.com/insights",
-                    snippet=f"Notre analyse approfondie révèle les opportunités stratégiques dans le secteur {query}.",
-                    published_at=datetime(2024, 1, 20),
-                    source_type="market_report",
-                    reliability_score=90
-                ),
-            ]
-        
-        return mock_results[:max_results]
     
     def format_context_for_llm(self, results: List[SearchResult]) -> str:
         """Formate les résultats de recherche pour le contexte du LLM"""

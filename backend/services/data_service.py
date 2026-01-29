@@ -1,160 +1,171 @@
 """
-Service de gestion des données
-Abstraction pour faciliter l'ajout futur d'une BDD
+Service pour télécharger et parser des datasets (CSV, Excel)
+Utilisé pour extraire des données quantitatives depuis des URLs
 """
 
-from typing import Dict, List, Optional
-from datetime import datetime
+import httpx
+import csv
+import io
+from typing import List, Dict, Optional
+import pandas as pd
 
 
 class DataService:
-    """
-    Service d'abstraction pour la gestion des données
-    Prêt pour l'intégration future d'une BDD (PostgreSQL ou MongoDB)
-    """
+    """Service pour télécharger et parser des datasets"""
     
     def __init__(self):
-        # Pour l'instant, stockage en mémoire
-        # À remplacer par une vraie connexion BDD
-        self.db_type = None  # 'postgresql' ou 'mongodb'
-        self.connection = None
+        self.supported_formats = ['.csv', '.xlsx', '.xls']
+        self.max_file_size = 10 * 1024 * 1024  # 10 MB max
     
-    # --- Méthodes pour la BDD future ---
+    def is_dataset_url(self, url: str) -> bool:
+        """Vérifie si une URL pointe vers un dataset supporté"""
+        url_lower = url.lower()
+        return any(url_lower.endswith(fmt) for fmt in self.supported_formats)
     
-    def connect_database(self, db_type: str, connection_string: str):
+    async def download_and_parse(self, url: str) -> Optional[Dict]:
         """
-        Connecte à une base de données
-        À implémenter plus tard selon le type de BDD choisi
-        """
-        self.db_type = db_type
-        # TODO: Implémenter la connexion réelle
-        pass
-    
-    async def get_market_data(self) -> List[Dict]:
-        """
-        Récupère les données de marché depuis la BDD
-        Pour l'instant, retourne des données mock
-        """
-        # TODO: Remplacer par une vraie requête BDD
-        return [
+        Télécharge et parse un dataset depuis une URL
+        
+        Args:
+            url: URL du dataset
+        
+        Returns:
+            Dict avec structure:
             {
-                "id": 1,
-                "année": 2023,
-                "tailleMarché": 150,
-                "pays": "FR",
-                "secteur": "Technologie",
-                "created_at": datetime.now().isoformat()
-            },
-            {
-                "id": 2,
-                "année": 2024,
-                "tailleMarché": 175,
-                "pays": "FR",
-                "secteur": "Technologie",
-                "created_at": datetime.now().isoformat()
+                "format": "csv" | "excel",
+                "rows": [{"col1": "val1", "col2": "val2"}, ...],
+                "preview": [liste des 5 premières lignes],
+                "columns": ["col1", "col2", ...],
+                "total_rows": int
             }
-        ]
-    
-    async def save_market_data(self, data: Dict) -> str:
-        """
-        Sauvegarde les données de marché dans la BDD
-        Pour l'instant, simule uniquement la sauvegarde
-        """
-        # TODO: Implémenter la sauvegarde réelle en BDD
-        print(f"[DATA SERVICE] Données à sauvegarder: {data}")
-        return "mock_id_123"
-    
-    async def query_market_data(
-        self,
-        filters: Dict,
-        limit: int = 100
-    ) -> List[Dict]:
-        """
-        Requête personnalisée sur les données de marché
-        """
-        # TODO: Implémenter les requêtes avec filtres
-        return await self.get_market_data()
-    
-    # --- Méthodes de formatage ---
-    
-    def format_quantitative_data(
-        self,
-        analysis_data: Dict,
-        sources: List
-    ) -> Dict:
-        """
-        Formate les données quantitatives pour les graphiques
-        Ajoute les sources et s'assure du bon format
         """
         
-        # Extraire les URLs des sources
-        source_urls = [s.url for s in sources] if sources else []
+        if not self.is_dataset_url(url):
+            print(f"⚠️ URL non supportée: {url}")
+            return None
         
-        # S'assurer que chaque dataset a des sources
-        if "marketSize" in analysis_data:
-            if "sources" not in analysis_data["marketSize"]:
-                analysis_data["marketSize"]["sources"] = source_urls[:2]
-        
-        if "marketShare" in analysis_data:
-            if "sources" not in analysis_data["marketShare"]:
-                analysis_data["marketShare"]["sources"] = source_urls[2:4]
-        
-        if "regionalGrowth" in analysis_data:
-            if "sources" not in analysis_data["regionalGrowth"]:
-                analysis_data["regionalGrowth"]["sources"] = source_urls[4:6]
-        
-        if "priceEvolution" in analysis_data:
-            if "sources" not in analysis_data["priceEvolution"]:
-                analysis_data["priceEvolution"]["sources"] = source_urls[-2:]
-        
-        return analysis_data
+        try:
+            print(f"📥 Téléchargement du dataset: {url}")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, follow_redirects=True)
+                
+                if response.status_code != 200:
+                    print(f"❌ Erreur HTTP {response.status_code} pour {url}")
+                    return None
+                
+                # Vérifier la taille
+                content_length = len(response.content)
+                if content_length > self.max_file_size:
+                    print(f"⚠️ Fichier trop volumineux: {content_length / 1024 / 1024:.2f} MB")
+                    return None
+                
+                # Parser selon le format
+                if url.lower().endswith('.csv'):
+                    return await self._parse_csv(response.content, url)
+                elif url.lower().endswith(('.xlsx', '.xls')):
+                    return await self._parse_excel(response.content, url)
+                
+        except httpx.TimeoutException:
+            print(f"⏱️ Timeout lors du téléchargement de {url}")
+            return None
+        except Exception as e:
+            print(f"❌ Erreur lors du parsing de {url}: {e}")
+            return None
     
-    def validate_data_format(self, data: Dict) -> bool:
-        """
-        Valide que les données sont au bon format pour le frontend
-        """
-        required_fields = ["labels", "data"]
+    async def _parse_csv(self, content: bytes, url: str) -> Dict:
+        """Parse un fichier CSV"""
+        try:
+            # Essayer différents encodages
+            for encoding in ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']:
+                try:
+                    text_content = content.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                print(f"❌ Impossible de décoder le CSV avec les encodages communs")
+                return None
+            
+            # Détecter le délimiteur
+            sniffer = csv.Sniffer()
+            sample = text_content[:1024]
+            try:
+                dialect = sniffer.sniff(sample)
+                delimiter = dialect.delimiter
+            except:
+                delimiter = ','  # Par défaut
+            
+            # Parser le CSV
+            reader = csv.DictReader(io.StringIO(text_content), delimiter=delimiter)
+            rows = list(reader)
+            
+            if not rows:
+                print(f"⚠️ CSV vide: {url}")
+                return None
+            
+            columns = list(rows[0].keys())
+            preview = rows[:5]  # 5 premières lignes
+            
+            print(f"✅ CSV parsé: {len(rows)} lignes, {len(columns)} colonnes")
+            
+            return {
+                "format": "csv",
+                "url": url,
+                "rows": rows,
+                "preview": preview,
+                "columns": columns,
+                "total_rows": len(rows)
+            }
+            
+        except Exception as e:
+            print(f"❌ Erreur parsing CSV: {e}")
+            return None
+    
+    async def _parse_excel(self, content: bytes, url: str) -> Dict:
+        """Parse un fichier Excel"""
+        try:
+            # Utiliser pandas pour parser Excel
+            df = pd.read_excel(io.BytesIO(content), engine='openpyxl')
+            
+            if df.empty:
+                print(f"⚠️ Excel vide: {url}")
+                return None
+            
+            # Convertir en dictionnaire
+            rows = df.to_dict('records')
+            columns = df.columns.tolist()
+            preview = rows[:5]  # 5 premières lignes
+            
+            print(f"✅ Excel parsé: {len(rows)} lignes, {len(columns)} colonnes")
+            
+            return {
+                "format": "excel",
+                "url": url,
+                "rows": rows,
+                "preview": preview,
+                "columns": columns,
+                "total_rows": len(rows)
+            }
+            
+        except Exception as e:
+            print(f"❌ Erreur parsing Excel: {e}")
+            return None
+    
+    def format_preview_for_display(self, dataset: Dict) -> str:
+        """Formate les 5 premières lignes pour affichage"""
+        if not dataset or not dataset.get("preview"):
+            return "Aucune donnée disponible"
         
-        if not all(field in data for field in required_fields):
-            return False
+        preview = dataset["preview"]
+        columns = dataset["columns"]
         
-        if len(data["labels"]) != len(data["data"]):
-            return False
+        # Créer un tableau texte
+        output = f"📊 Dataset ({dataset['total_rows']} lignes, {len(columns)} colonnes)\n\n"
+        output += "Colonnes: " + ", ".join(columns) + "\n\n"
+        output += "Aperçu (5 premières lignes):\n"
         
-        return True
-    
-    # --- Méthodes pour la connexion BDD future ---
-    
-    def _get_postgresql_connection(self, connection_string: str):
-        """Crée une connexion PostgreSQL (à implémenter)"""
-        # from sqlalchemy import create_engine
-        # engine = create_engine(connection_string)
-        # return engine
-        pass
-    
-    def _get_mongodb_connection(self, connection_string: str):
-        """Crée une connexion MongoDB (à implémenter)"""
-        # from pymongo import MongoClient
-        # client = MongoClient(connection_string)
-        # return client
-        pass
-    
-    def _execute_sql_query(self, query: str, params: Dict = None) -> List[Dict]:
-        """Execute une requête SQL (à implémenter)"""
-        # if self.db_type != 'postgresql':
-        #     raise ValueError("Not a SQL database")
-        # 
-        # with self.connection.connect() as conn:
-        #     result = conn.execute(query, params or {})
-        #     return [dict(row) for row in result]
-        pass
-    
-    def _execute_mongodb_query(self, collection: str, filter: Dict) -> List[Dict]:
-        """Execute une requête MongoDB (à implémenter)"""
-        # if self.db_type != 'mongodb':
-        #     raise ValueError("Not a MongoDB database")
-        # 
-        # db = self.connection['market_analysis']
-        # collection = db[collection]
-        # return list(collection.find(filter))
-        pass
+        for i, row in enumerate(preview, 1):
+            output += f"Ligne {i}: " + " | ".join([f"{k}={v}" for k, v in row.items()]) + "\n"
+        
+        return output

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ChatBox.css';
-import { generateAnalysis, searchGeneral, searchData } from '../services/apiService';
+import { analyzeChatInput } from '../services/apiService';
 
 const ChatBox = ({ onSendMessage }) => {
   const [messages, setMessages] = useState([
@@ -13,7 +13,6 @@ const ChatBox = ({ onSendMessage }) => {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [searchMode, setSearchMode] = useState('general'); // 'general' ou 'data'
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -45,27 +44,54 @@ const ChatBox = ({ onSendMessage }) => {
       // Message de traitement
       const processingMessage = {
         id: messages.length + 2,
-        text: "🔍 Je recherche des informations fiables et prépare l'analyse de marché...",
+        text: "🔍 Analyse en cours avec l'IA...",
         sender: 'bot',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, processingMessage]);
 
-      // Appel à l'API pour générer l'analyse
-      const analysis = await generateAnalysis(query, true);
+      // Appel à l'API pour analyser l'entrée utilisateur
+      const apiResponse = await analyzeChatInput(query);
+      
+      console.log('📊 Réponse API complète:', apiResponse);
+      console.log('📊 Datasets reçus:', apiResponse?.datasets);
       
       setIsTyping(false);
       
-      // Passer l'analyse au composant parent
-      onSendMessage(query, analysis);
+      // Gérer le nouveau format (objet avec response et sources ou juste string)
+      const responseText = typeof apiResponse === 'object' && apiResponse.response ? apiResponse.response : apiResponse;
       
-      // Message de confirmation
-      const completionMessage = {
-        id: messages.length + 3,
-        text: `✅ Votre analyse de marché est prête ! Consultez les résultats ci-dessous.\n\n📊 ${analysis.sources ? analysis.sources.length : 0} sources fiables consultées`,
-        sender: 'bot',
-        timestamp: new Date()
-      };
+      // Vérifier si c'est un refus d'intention (détection basée sur le contenu)
+      const isIntentionRefused = responseText.includes("**Demande non compatible avec l'analyse de marché**");
+      
+      // Passer la réponse complète au composant parent pour l'affichage dans QualitativeAnalysis
+      onSendMessage(query, apiResponse);
+      
+      // Message de confirmation adapté selon si l'intention est refusée ou acceptée
+      let completionMessage;
+      if (isIntentionRefused) {
+        completionMessage = {
+          id: messages.length + 3,
+          text: `⚠️ Votre demande ne correspond pas à une analyse de marché. Veuillez reformuler en précisant le marché ou secteur à analyser. Consultez les suggestions dans la section "Données Qualitatives".`,
+          sender: 'bot',
+          timestamp: new Date()
+        };
+      } else {
+        // Indiquer le nombre de sources et datasets si disponibles
+        const sourcesCount = typeof apiResponse === 'object' && apiResponse.sources ? apiResponse.sources.length : 0;
+        const datasetsCount = typeof apiResponse === 'object' && apiResponse.datasets ? apiResponse.datasets.length : 0;
+        
+        let detailsText = '';
+        if (sourcesCount > 0) detailsText += ` ${sourcesCount} source(s)`;
+        if (datasetsCount > 0) detailsText += ` ${datasetsCount > 0 && sourcesCount > 0 ? '+ ' : ''}${datasetsCount} dataset(s)`;
+        
+        completionMessage = {
+          id: messages.length + 3,
+          text: `✅ Votre analyse est prête !${detailsText ? ` (${detailsText})` : ''} Consultez les résultats ci-dessous.`,
+          sender: 'bot',
+          timestamp: new Date()
+        };
+      }
       setMessages(prev => [...prev, completionMessage]);
       
     } catch (error) {
@@ -74,13 +100,13 @@ const ChatBox = ({ onSendMessage }) => {
       // Message d'erreur
       const errorMessage = {
         id: messages.length + 3,
-        text: "❌ Une erreur est survenue lors de la génération de l'analyse. Veuillez réessayer.",
+        text: "❌ Une erreur est survenue lors de l'analyse. Veuillez réessayer.",
         sender: 'bot',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
       
-      console.error('Erreur lors de la génération de l\'analyse:', error);
+      console.error('Erreur lors de l\'analyse:', error);
     }
   };
 
@@ -103,10 +129,6 @@ const ChatBox = ({ onSendMessage }) => {
 
   const handleQuickQuestion = (question) => {
     setInputValue(question);
-  };
-
-  const toggleSearchMode = () => {
-    setSearchMode(prev => prev === 'general' ? 'data' : 'general');
   };
 
   return (
@@ -158,23 +180,6 @@ const ChatBox = ({ onSendMessage }) => {
           ))}
         </div>
       )}
-
-      <div className="search-mode-selector">
-        <button 
-          className={`mode-btn ${searchMode === 'general' ? 'active' : ''}`}
-          onClick={() => setSearchMode('general')}
-          title="Recherche de contexte, tendances et acteurs"
-        >
-          🔍 Mode Général
-        </button>
-        <button 
-          className={`mode-btn ${searchMode === 'data' ? 'active' : ''}`}
-          onClick={() => setSearchMode('data')}
-          title="Recherche de chiffres et statistiques"
-        >
-          📊 Mode Données
-        </button>
-      </div>
 
       <div className="chatbox-input">
         <textarea

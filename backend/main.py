@@ -9,12 +9,10 @@ from pydantic import BaseModel
 from typing import Literal, Optional, List
 from datetime import datetime
 import os
+from dotenv import load_dotenv
 
-# Les variables d'environnement sont lues directement depuis le système
-# Pas besoin de fichier .env
-# Configurer les variables sous Windows PowerShell:
-# $env:TAVILY_API_KEY="votre_clé_tavily"
-# $env:OPENAI_API_KEY="votre_clé_openai"
+# Charger les variables d'environnement depuis le fichier .env
+load_dotenv()
 
 # Import des services
 from services.tavily_service import TavilyService
@@ -48,8 +46,9 @@ if not tavily_api_key:
 if not openai_api_key:
     print("⚠️ OPENAI_API_KEY non définie - Mode mock activé")
 
+# Initialiser les services (LLM reçoit tavily_service pour l'intégration)
 tavily_service = TavilyService(api_key=tavily_api_key)
-llm_service = LLMService(api_key=openai_api_key)
+llm_service = LLMService(api_key=openai_api_key, tavily_service=tavily_service)
 data_service = DataService()
 
 # Modèles Pydantic
@@ -61,6 +60,9 @@ class SearchRequest(BaseModel):
 class AnalysisRequest(BaseModel):
     query: str
     include_web_search: bool = True
+
+class ChatRequest(BaseModel):
+    message: str
 
 class SearchResult(BaseModel):
     title: str
@@ -102,7 +104,6 @@ async def health_check():
         "services": {
             "tavily": tavily_service.is_configured(),
             "llm": llm_service.is_configured(),
-            "data": True
         }
     }
 
@@ -136,6 +137,48 @@ async def search_data(request: SearchRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/chat")
+async def analyze_chat_input(request: ChatRequest):
+    """
+    Analyse l'entrée utilisateur depuis la ChatBox avec le LLM
+    Retourne l'analyse textuelle + les datasets trouvés
+    """
+    try:
+        response = await llm_service.analyze_user_input(request.message)
+        
+        # Traiter les datasets trouvés (télécharger et parser)
+        datasets_parsed = []
+        if "datasets" in response and response["datasets"]:
+            print(f"📊 Traitement de {len(response['datasets'])} datasets...")
+            for dataset_info in response["datasets"][:3]:  # Limiter à 3 datasets
+                print(f"  → Téléchargement de: {dataset_info['url']}")
+                parsed = await data_service.download_and_parse(dataset_info["url"])
+                if parsed:
+                    datasets_parsed.append({
+                        "title": dataset_info["title"],
+                        "url": dataset_info["url"],
+                        "format": parsed["format"],
+                        "columns": parsed["columns"],
+                        "preview": parsed["preview"],
+                        "total_rows": parsed["total_rows"]
+                    })
+                    print(f"  ✅ Dataset parsé: {len(parsed['preview'])} lignes preview")
+        
+        print(f"📊 Total datasets parsés: {len(datasets_parsed)}")
+        
+        return {
+            "success": True,
+            "response": {
+                "response": response.get("response", ""),
+                "sources": response.get("sources", []),
+                "datasets": datasets_parsed
+            },
+            "generated_at": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/analysis")
 async def generate_analysis(request: AnalysisRequest):
     """
@@ -154,14 +197,9 @@ async def generate_analysis(request: AnalysisRequest):
                 max_results=5
             )
             
-            # Recherche de données quantitatives
-            data_results = await tavily_service.search(
-                query=f"{request.query} chiffres statistiques taille marché",
-                mode="data",
-                max_results=5
-            )
             
-            sources = general_results + data_results
+            
+            sources = general_results
             web_context = tavily_service.format_context_for_llm(sources)
         
         # Étape 2: Génération de l'analyse par le LLM
@@ -171,17 +209,11 @@ async def generate_analysis(request: AnalysisRequest):
             sources=sources
         )
         
-        # Étape 3: Formatage des données pour les graphiques
-        quantitative_data = data_service.format_quantitative_data(
-            analysis.get("quantitative", {}),
-            sources
-        )
         
         return {
             "success": True,
             "analysis": {
                 "qualitative": analysis.get("qualitative", {}),
-                "quantitative": quantitative_data,
                 "sources": sources,
                 "generated_at": datetime.now().isoformat()
             }
@@ -189,29 +221,6 @@ async def generate_analysis(request: AnalysisRequest):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/market-data")
-async def get_market_data():
-    """
-    Récupère les données de marché (préparé pour connexion BDD future)
-    """
-    try:
-        data = await data_service.get_market_data()
-        return {"success": True, "data": data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/market-data")
-async def save_market_data(data: dict):
-    """
-    Sauvegarde les données de marché (préparé pour connexion BDD future)
-    """
-    try:
-        result = await data_service.save_market_data(data)
-        return {"success": True, "message": "Data saved successfully", "id": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn

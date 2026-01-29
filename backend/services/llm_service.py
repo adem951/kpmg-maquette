@@ -1,22 +1,479 @@
 """
 Service LLM pour générer les analyses de marché
-Utilise LangChain et OpenAI pour orchestrer l'analyse
+Utilise OpenAI GPT pour orchestrer l'analyse avec détection d'intention
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import json
+from openai import OpenAI
+import os
+from dotenv import load_dotenv
+import asyncio
+
+# Charger les variables d'environnement depuis le fichier .env du backend
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(backend_dir, '.env')
+load_dotenv(env_path)
 
 
 class LLMService:
     """Service pour générer des analyses avec un LLM"""
     
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.model = "gpt-4"  # ou "gpt-3.5-turbo"
+    def __init__(self, api_key: str = None, tavily_service=None):
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.model = "gpt-4o-mini"  # Modèle plus récent et économique
+        self.tavily_service = tavily_service
+        
+        # Configurer OpenAI client
+        if self.api_key:
+            self.client = OpenAI(api_key=self.api_key)
+        else:
+            self.client = None
     
     def is_configured(self) -> bool:
         """Vérifie si le service est configuré"""
-        return self.api_key is not None and self.api_key != "your_openai_api_key_here"
+        configured = self.api_key is not None and self.api_key != "your_openai_api_key_here" and self.client is not None
+        print(f"🔑 LLM configuré: {configured} (api_key: {bool(self.api_key)}, client: {bool(self.client)})")
+        return configured
+    
+    async def detect_market_analysis_intent(self, user_input: str) -> Tuple[bool, str]:
+        """
+        Détecte si l'entrée utilisateur correspond à une demande d'analyse de marché
+        
+        Args:
+            user_input: La requête de l'utilisateur
+        
+        Returns:
+            Tuple[bool, str]: (est_analyse_marche, explication)
+        """
+        
+        if not self.is_configured():
+            # En mode mock, accepter toute demande
+            return True, "Mode simulation activé"
+        
+        try:
+            detection_prompt = """Tu es un classificateur d'intentions. Ton rôle est de déterminer si une demande utilisateur concerne une analyse de marché.
+
+Une analyse de marché inclut :
+- Étude d'un secteur, d'une industrie ou d'un marché spécifique
+- Analyse de la concurrence
+- Tendances du marché
+- Opportunités commerciales
+- Données sur les consommateurs, produits ou services
+- Prévisions économiques d'un secteur
+
+Une analyse de marché N'inclut PAS :
+- Questions générales non liées au business
+- Demandes personnelles
+- Conversations informelles
+- Questions techniques sans contexte marché
+
+Réponds UNIQUEMENT par un JSON avec ce format exact :
+{"is_market_analysis": true/false, "explanation": "explication courte"}
+
+Ne réponds QUE par le JSON, rien d'autre."""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": detection_prompt},
+                    {"role": "user", "content": f"Demande à classifier : {user_input}"}
+                ],
+                max_tokens=150,
+                temperature=0.3
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            result = json.loads(result_text)
+            
+            return result.get("is_market_analysis", False), result.get("explanation", "")
+            
+        except Exception as e:
+            print(f"Erreur lors de la détection d'intention: {e}")
+            # En cas d'erreur, accepter la demande par défaut
+            return True, "Détection d'intention non disponible"
+    
+    async def enrich_market_query(self, user_input: str) -> str:
+        """
+        Enrichit et clarifie le prompt utilisateur pour optimiser la recherche Tavily
+        
+        Args:
+            user_input: Le prompt original de l'utilisateur
+        
+        Returns:
+            str: Prompt enrichi et structuré
+        """
+        
+        if not self.is_configured():
+            return user_input
+        
+        try:
+            enrichment_prompt = """Tu es un expert en formulation de requêtes d'analyse de marché.
+
+Ton rôle : transformer un prompt utilisateur en une requête structurée et optimisée pour un moteur de recherche.
+
+Instructions :
+- Ajoute du contexte pertinent implicite
+- Précise le périmètre géographique si non mentionné (France/Europe par défaut)
+- Structure la requête avec des mots-clés pertinents
+- Ajoute des aspects clés d'analyse (tendances, acteurs, données chiffrées)
+- Reste concis (max 2-3 phrases)
+- Utilise un langage adapté à la recherche web professionnelle
+
+Réponds UNIQUEMENT par la requête enrichie, sans préambule ni explication."""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": enrichment_prompt},
+                    {"role": "user", "content": f"Prompt à enrichir : {user_input}"}
+                ],
+                max_tokens=200,
+                temperature=0.5
+            )
+            
+            enriched_query = response.choices[0].message.content.strip()
+            print(f"📝 Prompt enrichi : {enriched_query}")
+            return enriched_query
+            
+        except Exception as e:
+            print(f"Erreur lors de l'enrichissement: {e}")
+            return user_input
+    
+    async def format_tavily_response(self, tavily_results: List, user_query: str) -> str:
+        """
+        Reformule les résultats Tavily en français structuré et professionnel
+        
+        Args:
+            tavily_results: Liste des résultats de recherche Tavily
+            user_query: La requête originale de l'utilisateur
+        
+        Returns:
+            str: Analyse formatée en français
+        """
+        
+        if not self.is_configured():
+            return self._generate_mock_response(user_query)
+        
+        try:
+            # Extraire le contenu des résultats Tavily (ce sont des objets SearchResult)
+            context = "\n\n".join([
+                f"Source {i+1}: {result.title}\n{result.snippet}"
+                for i, result in enumerate(tavily_results[:5])
+            ])
+            
+            formatting_prompt = """Tu es un analyste de marché professionnel. 
+
+Ton rôle : synthétiser des informations brutes de recherche web en une analyse de marché structurée, claire et professionnelle en français.
+
+Instructions :
+- Utilise un français impeccable et professionnel
+- Structure l'analyse avec des sections claires (tendances, acteurs, opportunités, etc.)
+- Utilise des puces pour les listes
+- Mets en gras (**texte**) les points importants
+- Cite les chiffres et données factuelles quand disponibles
+- Reste objectif et factuel
+- Longueur : 300-500 mots
+
+Format souhaité :
+**Analyse de marché : [Sujet]**
+
+**Vue d'ensemble**
+[Contexte général]
+
+**Tendances principales**
+• Point 1
+• Point 2
+
+**Acteurs clés**
+[Description]
+
+**Opportunités**
+• Opportunité 1
+
+**Recommandations**
+[Synthèse]"""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": formatting_prompt},
+                    {"role": "user", "content": f"Requête utilisateur : {user_query}\n\nInformations collectées :\n{context}\n\nRédige l'analyse de marché."}
+                ],
+                max_tokens=1500,
+                temperature=0.7
+            )
+            
+            formatted_response = response.choices[0].message.content.strip()
+            return formatted_response
+            
+        except Exception as e:
+            print(f"Erreur lors du formatage: {e}")
+            return self._generate_mock_response(user_query)
+    async def analyze_user_input(self, user_input: str) -> str:
+        """
+        Analyse l'entrée utilisateur avec détection d'intention et enrichissement
+        
+        Flux :
+        1. Détecte si c'est une demande d'analyse de marché
+        2. Si non : refuse et demande de reformuler
+        3. Si oui : enrichit le prompt, appelle Tavily, reformule la réponse
+        
+        Args:
+            user_input: La requête de l'utilisateur depuis la ChatBox
+        
+        Returns:
+            str: Réponse générée (analyse ou message d'erreur)
+        """
+        
+        print(f"🔍 Analyse de la requête : {user_input}")
+        
+        # Étape 1 : Détection d'intention
+        is_market_analysis, explanation = await self.detect_market_analysis_intent(user_input)
+        
+        if not is_market_analysis:
+            print(f"❌ Intention non valide : {explanation}")
+            return {"response": f"""**Demande non compatible avec l'analyse de marché**
+
+Votre demande ne semble pas correspondre à une analyse de marché.
+
+**Raison** : {explanation}
+
+**Pour obtenir une analyse de marché, veuillez reformuler votre demande en précisant :**
+• Le secteur ou l'industrie à analyser
+• Le type d'information recherché (tendances, concurrence, opportunités)
+• Le périmètre géographique si pertinent
+
+**Exemples de requêtes valides :**
+• "Analyse du marché des véhicules électriques en Europe"
+• "Tendances du e-commerce en France"
+• "Opportunités dans le secteur de l'intelligence artificielle"
+• "Analyse de la concurrence dans le marché du luxe"
+
+N'hésitez pas à reformuler votre demande ! 🔍""", "sources": [], "datasets": []}
+        
+        print(f"✅ Intention valide : {explanation}")
+        
+        # Étape 2 : Enrichissement du prompt
+        enriched_query = await self.enrich_market_query(user_input)
+        
+        # Étape 3 : Recherches Tavily en parallèle (texte + datasets)
+        if self.tavily_service and self.tavily_service.is_configured():
+            print(f"🌐 Recherche Tavily (parallèle) avec : {enriched_query}")
+            try:
+                # Lancer les deux recherches en parallèle
+                tavily_general_task = self.tavily_service.search(
+                    query=enriched_query,
+                    mode="general",
+                    max_results=5
+                )
+                
+                tavily_data_task = self.tavily_service.search(
+                    query=enriched_query,
+                    mode="data",
+                    max_results=5
+                )
+                
+                # Attendre les deux résultats en parallèle
+                tavily_general_results, tavily_data_results = await asyncio.gather(
+                    tavily_general_task,
+                    tavily_data_task,
+                    return_exceptions=True
+                )
+                
+                # Gérer les erreurs potentielles
+                if isinstance(tavily_general_results, Exception):
+                    print(f"⚠️ Erreur recherche générale: {tavily_general_results}")
+                    tavily_general_results = []
+                
+                if isinstance(tavily_data_results, Exception):
+                    print(f"⚠️ Erreur recherche datasets: {tavily_data_results}")
+                    tavily_data_results = []
+                
+                print(f"📊 Tavily général: {len(tavily_general_results)} résultats")
+                print(f"📊 Tavily datasets: {len(tavily_data_results)} résultats")
+                
+                # Si aucun résultat, utiliser le LLM direct
+                if (not tavily_general_results or len(tavily_general_results) == 0) and \
+                   (not tavily_data_results or len(tavily_data_results) == 0):
+                    print("⚠️ Aucun résultat Tavily - Basculement vers LLM direct")
+                    response = await self._direct_llm_response(user_input)
+                    return {"response": response, "sources": [], "datasets": []}
+                
+                # Étape 4 : Reformulation de la réponse Tavily (utiliser résultats généraux)
+                formatted_response = await self.format_tavily_response(tavily_general_results, user_input)
+                
+                # Préparer les sources pour le frontend
+                sources_data = [{
+                    "title": result.title,
+                    "url": result.url
+                } for result in tavily_general_results]
+                
+                # Préparer les datasets (URLs vers CSV/Excel trouvées)
+                datasets_data = [{
+                    "title": result.title,
+                    "url": result.url,
+                    "type": self._detect_file_type(result.url)
+                } for result in tavily_data_results if self._is_dataset_url(result.url)]
+                
+                print(f"📊 Datasets bruts trouvés: {len(datasets_data)}")
+                
+                # Valider la pertinence des datasets avec le LLM
+                if len(datasets_data) > 0:
+                    datasets_data = await self._validate_datasets_relevance(datasets_data, user_input)
+                    print(f"✅ Datasets pertinents après validation: {len(datasets_data)}")
+                
+                # Retourner avec sources et datasets
+                return {
+                    "response": formatted_response,
+                    "sources": sources_data,
+                    "datasets": datasets_data
+                }
+                
+            except Exception as e:
+                print(f"⚠️ Erreur Tavily : {e}")
+                # Fallback : réponse directe du LLM sans Tavily
+                response = await self._direct_llm_response(user_input)
+                return {"response": response, "sources": [], "datasets": []}
+        else:
+            print("⚠️ Tavily non configuré - Réponse LLM directe")
+            # Fallback : réponse directe du LLM sans Tavily
+            response = await self._direct_llm_response(user_input)
+            return {"response": response, "sources": [], "datasets": []}
+    
+    def _is_dataset_url(self, url: str) -> bool:
+        """Vérifie si une URL pointe vers un dataset"""
+        url_lower = url.lower()
+        return any(url_lower.endswith(ext) for ext in ['.csv', '.xlsx', '.xls'])
+    
+    def _detect_file_type(self, url: str) -> str:
+        """Détecte le type de fichier depuis l'URL"""
+        url_lower = url.lower()
+        if url_lower.endswith('.csv'):
+            return 'csv'
+        elif url_lower.endswith(('.xlsx', '.xls')):
+            return 'excel'
+        return 'unknown'
+    
+    async def _validate_datasets_relevance(self, datasets: List[Dict], user_query: str) -> List[Dict]:
+        """
+        Valide la pertinence des datasets trouvés par rapport à la requête utilisateur
+        
+        Args:
+            datasets: Liste des datasets trouvés avec title et url
+            user_query: La requête originale de l'utilisateur
+        
+        Returns:
+            Liste filtrée des datasets pertinents uniquement
+        """
+        
+        if not self.is_configured():
+            # En mode non configuré, retourner tous les datasets
+            return datasets
+        
+        try:
+            # Préparer la liste des datasets pour le LLM
+            datasets_info = "\n".join([
+                f"{i+1}. Titre: {ds['title']}\n   URL: {ds['url']}"
+                for i, ds in enumerate(datasets)
+            ])
+            
+            validation_prompt = f"""Tu es un expert en évaluation de pertinence de données pour l'analyse de marché.
+
+Requête utilisateur: "{user_query}"
+
+Datasets trouvés:
+{datasets_info}
+
+Ton rôle: Évaluer si chaque dataset est PERTINENT pour répondre à la requête.
+
+Critères de pertinence:
+- Le dataset doit contenir des données liées au secteur/marché mentionné
+- Le dataset doit être récent ou historiquement pertinent
+- Le titre/URL suggère des données quantitatives exploitables
+
+Réponds UNIQUEMENT par un JSON avec ce format exact:
+{{
+  "relevant_indices": [1, 3],  // Indices des datasets pertinents (commence à 1)
+  "explanation": "Dataset 1 pertinent car..., Dataset 2 non pertinent car..."
+}}
+
+Ne réponds QUE par le JSON, rien d'autre."""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": validation_prompt}
+                ],
+                max_tokens=300,
+                temperature=0.3
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            result = json.loads(result_text)
+            
+            relevant_indices = result.get("relevant_indices", [])
+            explanation = result.get("explanation", "")
+            
+            print(f"🔍 Validation LLM: {explanation}")
+            
+            # Filtrer les datasets selon les indices pertinents (convertir de 1-indexed à 0-indexed)
+            relevant_datasets = [datasets[i-1] for i in relevant_indices if 0 < i <= len(datasets)]
+            
+            return relevant_datasets
+            
+        except Exception as e:
+            print(f"⚠️ Erreur validation pertinence: {e}")
+            # En cas d'erreur, retourner tous les datasets pour ne pas bloquer
+            return datasets
+    
+    async def _direct_llm_response(self, user_input: str) -> str:
+        """
+        Génère une réponse directe du LLM sans recherche Tavily (fallback)
+        """
+        
+        if not self.is_configured():
+            return self._generate_mock_response(user_input)
+        
+        try:
+            system_prompt = """Tu es un outil d'analyse de marché expert. 
+Tu aides les utilisateurs à analyser les marchés, les tendances, les concurrents et les opportunités d'affaires.
+Réponds de manière structurée, professionnelle et actionnable en français.
+Utilise des puces, du gras (**texte**) et structure ton analyse clairement."""
+            
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ],
+                max_tokens=1000,
+                temperature=0.7
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            print(f"Erreur lors de l'appel à OpenAI: {e}")
+            return self._generate_mock_response(user_input)
+    
+    def _generate_mock_response(self, user_input: str) -> str:
+        """Génère une réponse mock pour les tests"""
+        return f"""**Analyse de marché pour: {user_input}**
+
+Voici une analyse préliminaire basée sur votre demande:
+
+**Tendances actuelles:**
+- Le marché montre des signes de croissance continue
+- L'innovation technologique reste un facteur clé
+- Les consommateurs privilégient la durabilité
+
+**Recommandations:**
+- Surveiller les évolutions réglementaires
+- Investir dans les technologies émergentes
+- Développer une stratégie de différenciation
+
+*Note: Cette analyse est générée en mode simulation. Configurez une clé API OpenAI pour obtenir des analyses plus détaillées.*"""
     
     async def generate_analysis(
         self,
