@@ -1,7 +1,7 @@
 import React from 'react';
 import './QualitativeAnalysis.css';
 
-const QualitativeAnalysis = ({ analysisData = null }) => {
+const QualitativeAnalysis = ({ analysisData = null, sources = [] }) => {
   const formatAnalysisContent = (content) => {
     if (!content) return '';
     
@@ -51,6 +51,27 @@ const QualitativeAnalysis = ({ analysisData = null }) => {
           ))}
         </div>
       </div>
+
+      {/* Sources utilisées */}
+      {sources && sources.length > 0 && (
+        <div className="sources-section">
+          <h3>📚 Sources utilisées</h3>
+          <ul className="sources-list">
+            {sources.map((source, index) => (
+              <li key={index}>
+                <a 
+                  href={source.url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="source-link"
+                >
+                  {source.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };

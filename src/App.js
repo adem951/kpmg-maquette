@@ -9,11 +9,14 @@ function App() {
   const [showResults, setShowResults] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [searchedDatasets, setSearchedDatasets] = useState([]);
+  const [activeTab, setActiveTab] = useState('qualitative'); // 'qualitative' ou 'quantitative'
 
   const handleAnalysisRequest = (query, response) => {
     setIsLoading(true);
     setError(null);
     setShowResults(false);
+    setActiveTab('qualitative'); // Par défaut, afficher l'analyse qualitative
     
     // Si la réponse est fournie directement (depuis l'API LLM)
     if (response) {
@@ -42,6 +45,12 @@ function App() {
     }
   };
 
+  const handleDatasetsFound = (datasets) => {
+    console.log('📊 App.js - Datasets trouvés via API:', datasets);
+    setSearchedDatasets(datasets);
+    setShowResults(true);
+  };
+
   return (
     <div className="App">
       <header className="app-header">
@@ -68,7 +77,10 @@ function App() {
               <h2>Bienvenue sur votre plateforme d'analyse de marché</h2>
               <p>Utilisez l'assistant IA pour obtenir des analyses détaillées en quelques secondes</p>
             </div>
-            <ChatBox onSendMessage={handleAnalysisRequest} />
+            <ChatBox 
+              onSendMessage={handleAnalysisRequest} 
+              onDatasetsFound={handleDatasetsFound}
+            />
           </div>
 
           <div className="right-panel">
@@ -103,12 +115,43 @@ function App() {
               <div className="results-container">
                 {currentAnalysis && (
                   <>
-                    <QualitativeAnalysis analysisData={currentAnalysis.llmResponse} />
-                    <QuantitativeAnalysis 
-                      sources={currentAnalysis.sources || []} 
-                      datasets={currentAnalysis.datasets || []}
-                    />
+                    {/* Onglets de navigation */}
+                    <div className="analysis-tabs">
+                      <button 
+                        className={`tab-btn ${activeTab === 'qualitative' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('qualitative')}
+                      >
+                        📝 Analyse Qualitative
+                      </button>
+                      <button 
+                        className={`tab-btn ${activeTab === 'quantitative' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('quantitative')}
+                      >
+                        📊 Analyse Quantitative ({currentAnalysis.datasets?.length || 0})
+                      </button>
+                    </div>
+
+                    {/* Contenu des onglets */}
+                    <div className="tab-content">
+                      {activeTab === 'qualitative' && (
+                        <QualitativeAnalysis 
+                          analysisData={currentAnalysis.llmResponse}
+                          sources={currentAnalysis.sources || []}
+                        />
+                      )}
+                      
+                      {activeTab === 'quantitative' && (
+                        <QuantitativeAnalysis 
+                          datasets={currentAnalysis.datasets || []}
+                        />
+                      )}
+                    </div>
                   </>
+                )}
+                {searchedDatasets.length > 0 && !currentAnalysis && (
+                  <QuantitativeAnalysis 
+                    datasets={searchedDatasets}
+                  />
                 )}
               </div>
             )}

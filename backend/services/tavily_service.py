@@ -106,26 +106,24 @@ class TavilyService:
             raise Exception("Tavily n'est pas configuré. Veuillez ajouter une clé API valide.")
         
         try:
-            # Adapter la requête selon le mode
-            if mode == "data":
-                # Recherche spécifique de datasets CSV/Excel
-                search_query = f"{query} csv excel dataset données statistiques data"
-                search_depth = "advanced"
-            else:
-                search_query = query
-                search_depth = "basic"
+            # Mode général uniquement (data mode supprimé)
+            search_query = query
+            search_depth = "basic"
             
-            # Appel à l'API Tavily (exemple - adapter selon la vraie API)
+            # Appel à l'API Tavily
+            tavily_params = {
+                "api_key": self.api_key,
+                "query": search_query,
+                "max_results": max_results or 10,
+                "search_depth": search_depth
+            }
+            
+            print(f"🔍 Tavily params: query='{search_query}'")
+            
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/search",
-                    json={
-                        "api_key": self.api_key,
-                        "query": search_query,
-                        "max_results": max_results * 2,  # Demander plus pour filtrer
-                        "search_depth": search_depth,
-                        "include_domains": self._get_preferred_domains(mode)
-                    },
+                    json=tavily_params,
                     timeout=30.0
                 )
                 
@@ -139,10 +137,7 @@ class TavilyService:
                 results = self._parse_tavily_response(data)
                 
                 # Filtrer par fiabilité
-                if mode == "data":
-                    results = self._filter_by_reliability(results, min_score=75)
-                else:
-                    results = self._filter_by_reliability(results, min_score=60)
+                results = self._filter_by_reliability(results, min_score=60)
                 
                 # Si aucun résultat après filtrage, garder tous les résultats
                 if len(results) == 0:
@@ -158,11 +153,57 @@ class TavilyService:
     def _get_preferred_domains(self, mode: str) -> List[str]:
         """Retourne les domaines préférés selon le mode"""
         if mode == "data":
-            return (
-                self.trusted_domains["gov_data"] + 
-                self.trusted_domains["market_report"]
+            # Pour le mode data, FORCER uniquement INSEE et portails français
+            return [
+                "insee.fr",
+                "data.gouv.fr",
+                "statistiques.developpement-durable.gouv.fr"
+            ]
+        return []
+    
+    def _boost_dataset_urls(self, results: List[SearchResult]) -> List[SearchResult]:
+        """
+        Booste le score de fiabilité des URLs qui semblent contenir des datasets
+        Filtre aussi les URLs API non pertinentes
+        """
+        boosted_results = []
+        for result in results:
+            url_lower = result.url.lower()
+            title_lower = result.title.lower()
+            
+            # FILTRAGE : Exclure complètement les URLs API
+            if '/api/' in url_lower or url_lower.endswith('.xml'):
+                print(f"  ❌ Exclusion URL API/XML: {result.url}")
+                continue
+            
+            # Critères de boost
+            boost = 0
+            if '/statistiques/' in url_lower:
+                boost += 20  # Boost fort pour pages statistiques
+            if '/fichier/' in url_lower:
+                boost += 15
+            if 'insee.fr' in url_lower:
+                boost += 10
+            if any(keyword in title_lower for keyword in ['données', 'statistique', 'chiffres', 'tableau']):
+                boost += 5
+            
+            # Appliquer le boost
+            new_score = min(100, result.reliability_score + boost)
+            
+            if boost > 0:
+                print(f"  📈 Boost +{boost} pour {result.url} (score: {result.reliability_score} → {new_score})")
+            
+            boosted_result = SearchResult(
+                title=result.title,
+                url=result.url,
+                snippet=result.snippet,
+                source_type=result.source_type,
+                reliability_score=new_score
             )
-        return []  # Pas de filtre strict en mode général
+            boosted_results.append(boosted_result)
+        
+        # Trier par score après boost
+        return sorted(boosted_results, key=lambda x: x.reliability_score, reverse=True)  # Pas de filtre strict en mode général
     
     def _parse_tavily_response(self, data: dict) -> List[SearchResult]:
         """Parse la réponse de l'API Tavily"""

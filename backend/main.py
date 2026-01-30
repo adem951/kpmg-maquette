@@ -48,8 +48,8 @@ if not openai_api_key:
 
 # Initialiser les services (LLM reçoit tavily_service pour l'intégration)
 tavily_service = TavilyService(api_key=tavily_api_key)
-llm_service = LLMService(api_key=openai_api_key, tavily_service=tavily_service)
 data_service = DataService()
+llm_service = LLMService(api_key=openai_api_key, tavily_service=tavily_service, data_service=data_service)
 
 # Modèles Pydantic
 class SearchRequest(BaseModel):
@@ -140,43 +140,98 @@ async def search_data(request: SearchRequest):
 @app.post("/api/chat")
 async def analyze_chat_input(request: ChatRequest):
     """
-    Analyse l'entrée utilisateur depuis la ChatBox avec le LLM
-    Retourne l'analyse textuelle + les datasets trouvés
+    Analyse complète : qualitative (LLM) + quantitative (datasets)
     """
     try:
-        response = await llm_service.analyze_user_input(request.message)
+        print(f"🔍 Analyse complète pour: {request.message}")
         
-        # Traiter les datasets trouvés (télécharger et parser)
-        datasets_parsed = []
-        if "datasets" in response and response["datasets"]:
-            print(f"📊 Traitement de {len(response['datasets'])} datasets...")
-            for dataset_info in response["datasets"][:3]:  # Limiter à 3 datasets
-                print(f"  → Téléchargement de: {dataset_info['url']}")
-                parsed = await data_service.download_and_parse(dataset_info["url"])
-                if parsed:
-                    datasets_parsed.append({
-                        "title": dataset_info["title"],
-                        "url": dataset_info["url"],
-                        "format": parsed["format"],
-                        "columns": parsed["columns"],
-                        "preview": parsed["preview"],
-                        "total_rows": parsed["total_rows"]
-                    })
-                    print(f"  ✅ Dataset parsé: {len(parsed['preview'])} lignes preview")
+        # Lancer les deux analyses en parallèle
+        import asyncio
         
-        print(f"📊 Total datasets parsés: {len(datasets_parsed)}")
+        # Analyse qualitative (LLM + Tavily)
+        qualitative_task = llm_service.analyze_user_input(request.message)
         
+        # Analyse quantitative (datasets via APIs)
+        quantitative_task = data_service.search_all_apis(request.message)
+        
+        # Attendre les deux résultats
+        qualitative_response, datasets_found = await asyncio.gather(
+            qualitative_task,
+            quantitative_task
+        )
+        
+        print(f"✅ Analyse qualitative: {len(qualitative_response.get('sources', []))} sources")
+        print(f"✅ Analyse quantitative: {len(datasets_found)} datasets")
+        
+        # Retourner les deux analyses
         return {
             "success": True,
             "response": {
-                "response": response.get("response", ""),
-                "sources": response.get("sources", []),
-                "datasets": datasets_parsed
+                "response": qualitative_response.get("response", ""),
+                "sources": qualitative_response.get("sources", []),
+                "datasets": datasets_found  # Maintenant on retourne les datasets
             },
             "generated_at": datetime.now().isoformat()
         }
     
     except Exception as e:
+        print(f"❌ Erreur analyse complète: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/datasets/search")
+async def search_datasets(request: ChatRequest):
+    """
+    Recherche de datasets via les APIs officielles (INSEE, data.gouv.fr, etc.)
+    """
+    try:
+        print(f"🔍 Recherche de datasets pour: {request.message}")
+        
+        # Rechercher via différentes APIs
+        datasets_found = await data_service.search_all_apis(request.message)
+        
+        print(f"✅ {len(datasets_found)} datasets trouvés")
+        
+        return {
+            "success": True,
+            "datasets": datasets_found,
+            "count": len(datasets_found)
+        }
+    
+    except Exception as e:
+        print(f"❌ Erreur recherche datasets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/datasets/download")
+async def download_dataset(request: dict):
+    """
+    Télécharge et parse un dataset spécifique
+    """
+    try:
+        url = request.get("url")
+        if not url:
+            raise HTTPException(status_code=400, detail="URL manquante")
+        
+        print(f"📥 Téléchargement: {url}")
+        
+        # Télécharger et parser
+        parsed = await data_service.download_and_parse(url)
+        
+        if not parsed:
+            raise HTTPException(status_code=500, detail="Échec du parsing")
+        
+        return {
+            "success": True,
+            "dataset": {
+                "format": parsed["format"],
+                "columns": parsed["columns"],
+                "preview": parsed["preview"],
+                "total_rows": parsed["total_rows"],
+                "url": parsed["url"]
+            }
+        }
+    
+    except Exception as e:
+        print(f"❌ Erreur téléchargement: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/analysis")

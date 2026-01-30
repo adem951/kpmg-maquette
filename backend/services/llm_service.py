@@ -19,10 +19,11 @@ load_dotenv(env_path)
 class LLMService:
     """Service pour générer des analyses avec un LLM"""
     
-    def __init__(self, api_key: str = None, tavily_service=None):
+    def __init__(self, api_key: str = None, tavily_service=None, data_service=None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = "gpt-4o-mini"  # Modèle plus récent et économique
         self.tavily_service = tavily_service
+        self.data_service = data_service
         
         # Configurer OpenAI client
         if self.api_key:
@@ -139,6 +140,50 @@ Réponds UNIQUEMENT par la requête enrichie, sans préambule ni explication."""
         except Exception as e:
             print(f"Erreur lors de l'enrichissement: {e}")
             return user_input
+    
+    async def _enrich_for_datasets(self, user_query: str) -> str:
+        """
+        Enrichit spécifiquement pour trouver des datasets pertinents
+        Ajoute des termes techniques et statistiques précis
+        """
+        if not self.is_configured():
+            return user_query
+        
+        try:
+            prompt = f"""Transforme cette requête pour trouver des DATASETS spécifiques (CSV/Excel) sur le sujet.
+
+Requête: "{user_query}"
+
+Règles:
+- Identifier les termes EXACTS pour des datasets (ex: "immatriculations véhicules électriques" plutôt que "marché automobile")
+- Ajouter des qualificatifs statistiques: données, chiffres, statistiques, séries temporelles
+- Inclure des termes techniques du domaine
+- Préciser la zone géographique si pertinent (France, région, etc.)
+- Répondre UNIQUEMENT par la requête (max 12 mots)
+
+Exemples:
+"marché véhicules électriques" → "immatriculations véhicules électriques hybrides rechargeables France statistiques ventes"
+"opportunités IA" → "intelligence artificielle investissements déploiement France données chiffres marché"
+"immobilier Paris" → "prix immobilier transactions logements Paris Ile-de-France données notaires"
+
+Requête pour datasets:"""
+            
+            response = await self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Tu es un expert en recherche de données statistiques."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=80
+            )
+            
+            enriched = response.choices[0].message.content.strip()
+            return enriched if enriched else user_query
+            
+        except Exception as e:
+            print(f"⚠️ Erreur enrichissement datasets: {e}")
+            return user_query
     
     async def format_tavily_response(self, tavily_results: List, user_query: str) -> str:
         """
@@ -257,28 +302,15 @@ N'hésitez pas à reformuler votre demande ! 🔍""", "sources": [], "datasets":
         # Étape 2 : Enrichissement du prompt
         enriched_query = await self.enrich_market_query(user_input)
         
-        # Étape 3 : Recherches Tavily en parallèle (texte + datasets)
+        # Étape 3 : Recherche Tavily pour le contexte textuel uniquement
         if self.tavily_service and self.tavily_service.is_configured():
-            print(f"🌐 Recherche Tavily (parallèle) avec : {enriched_query}")
+            print(f"🌐 Recherche Tavily avec : {enriched_query}")
             try:
-                # Lancer les deux recherches en parallèle
-                tavily_general_task = self.tavily_service.search(
+                # Recherche générale pour le contexte
+                tavily_general_results = await self.tavily_service.search(
                     query=enriched_query,
                     mode="general",
                     max_results=5
-                )
-                
-                tavily_data_task = self.tavily_service.search(
-                    query=enriched_query,
-                    mode="data",
-                    max_results=5
-                )
-                
-                # Attendre les deux résultats en parallèle
-                tavily_general_results, tavily_data_results = await asyncio.gather(
-                    tavily_general_task,
-                    tavily_data_task,
-                    return_exceptions=True
                 )
                 
                 # Gérer les erreurs potentielles
@@ -286,21 +318,15 @@ N'hésitez pas à reformuler votre demande ! 🔍""", "sources": [], "datasets":
                     print(f"⚠️ Erreur recherche générale: {tavily_general_results}")
                     tavily_general_results = []
                 
-                if isinstance(tavily_data_results, Exception):
-                    print(f"⚠️ Erreur recherche datasets: {tavily_data_results}")
-                    tavily_data_results = []
-                
                 print(f"📊 Tavily général: {len(tavily_general_results)} résultats")
-                print(f"📊 Tavily datasets: {len(tavily_data_results)} résultats")
                 
                 # Si aucun résultat, utiliser le LLM direct
-                if (not tavily_general_results or len(tavily_general_results) == 0) and \
-                   (not tavily_data_results or len(tavily_data_results) == 0):
+                if not tavily_general_results or len(tavily_general_results) == 0:
                     print("⚠️ Aucun résultat Tavily - Basculement vers LLM direct")
                     response = await self._direct_llm_response(user_input)
-                    return {"response": response, "sources": [], "datasets": []}
+                    return {"response": response, "sources": []}
                 
-                # Étape 4 : Reformulation de la réponse Tavily (utiliser résultats généraux)
+                # Étape 4 : Reformulation de la réponse Tavily
                 formatted_response = await self.format_tavily_response(tavily_general_results, user_input)
                 
                 # Préparer les sources pour le frontend
@@ -309,37 +335,22 @@ N'hésitez pas à reformuler votre demande ! 🔍""", "sources": [], "datasets":
                     "url": result.url
                 } for result in tavily_general_results]
                 
-                # Préparer les datasets (URLs vers CSV/Excel trouvées)
-                datasets_data = [{
-                    "title": result.title,
-                    "url": result.url,
-                    "type": self._detect_file_type(result.url)
-                } for result in tavily_data_results if self._is_dataset_url(result.url)]
-                
-                print(f"📊 Datasets bruts trouvés: {len(datasets_data)}")
-                
-                # Valider la pertinence des datasets avec le LLM
-                if len(datasets_data) > 0:
-                    datasets_data = await self._validate_datasets_relevance(datasets_data, user_input)
-                    print(f"✅ Datasets pertinents après validation: {len(datasets_data)}")
-                
-                # Retourner avec sources et datasets
+                # Retourner avec sources uniquement (pas de datasets pour l'instant)
                 return {
                     "response": formatted_response,
-                    "sources": sources_data,
-                    "datasets": datasets_data
+                    "sources": sources_data
                 }
                 
             except Exception as e:
                 print(f"⚠️ Erreur Tavily : {e}")
                 # Fallback : réponse directe du LLM sans Tavily
                 response = await self._direct_llm_response(user_input)
-                return {"response": response, "sources": [], "datasets": []}
+                return {"response": response, "sources": []}
         else:
             print("⚠️ Tavily non configuré - Réponse LLM directe")
             # Fallback : réponse directe du LLM sans Tavily
             response = await self._direct_llm_response(user_input)
-            return {"response": response, "sources": [], "datasets": []}
+            return {"response": response, "sources": []}
     
     def _is_dataset_url(self, url: str) -> bool:
         """Vérifie si une URL pointe vers un dataset"""
@@ -385,17 +396,28 @@ Requête utilisateur: "{user_query}"
 Datasets trouvés:
 {datasets_info}
 
-Ton rôle: Évaluer si chaque dataset est PERTINENT pour répondre à la requête.
+Ton rôle: Évaluer si chaque dataset est DIRECTEMENT PERTINENT pour répondre à la requête.
 
-Critères de pertinence:
-- Le dataset doit contenir des données liées au secteur/marché mentionné
-- Le dataset doit être récent ou historiquement pertinent
-- Le titre/URL suggère des données quantitatives exploitables
+Critères de pertinence STRICTS:
+- Le dataset doit traiter SPÉCIFIQUEMENT du sujet demandé (pas seulement un sujet connexe)
+- Vérifier la zone géographique: un dataset régional (ex: Guadeloupe) n'est PAS pertinent pour une analyse France entière
+- Vérifier la granularité: "transport en général" n'est PAS pertinent pour "véhicules électriques"
+- Le titre/colonnes doivent clairement indiquer des données sur le sujet exact
+
+REJETER si:
+- Le dataset est trop générique (ex: "transport" pour "véhicules électriques")
+- La zone géographique ne correspond pas (région vs national)
+- Le sujet est connexe mais pas le même (ex: "automobiles en général" vs "véhicules électriques")
+
+ACCEPTER seulement si:
+- Le sujet exact est traité (pas juste le domaine général)
+- La zone géographique correspond
+- Les données sont exploitables et spécifiques
 
 Réponds UNIQUEMENT par un JSON avec ce format exact:
 {{
   "relevant_indices": [1, 3],  // Indices des datasets pertinents (commence à 1)
-  "explanation": "Dataset 1 pertinent car..., Dataset 2 non pertinent car..."
+  "explanation": "Dataset X: score 8/10 car [raison précise]. Dataset Y: score 3/10 car [raison du rejet]."
 }}
 
 Ne réponds QUE par le JSON, rien d'autre."""
@@ -456,6 +478,57 @@ Utilise des puces, du gras (**texte**) et structure ton analyse clairement."""
         except Exception as e:
             print(f"Erreur lors de l'appel à OpenAI: {e}")
             return self._generate_mock_response(user_input)
+    
+    async def validate_dataset_content(self, dataset_keywords: str, user_query: str) -> bool:
+        """
+        Valide la pertinence d'un dataset en analysant ses colonnes et contenu
+        
+        Args:
+            dataset_keywords: String contenant colonnes et premières valeurs du dataset
+            user_query: Requête utilisateur originale
+        
+        Returns:
+            True si le dataset est pertinent, False sinon
+        """
+        if not self.is_configured() or not dataset_keywords:
+            return True  # Fallback: accepter si pas de LLM
+        
+        try:
+            prompt = f"""Analyse si ce dataset est pertinent pour la requête utilisateur.
+
+Requête: "{user_query}"
+
+Contenu du dataset:
+{dataset_keywords}
+
+Le dataset est-il DIRECTEMENT pertinent pour répondre à la requête ?
+
+Critères STRICTS:
+- Les colonnes doivent traiter du sujet exact (pas juste un domaine connexe)
+- Rejeter si trop générique (ex: "transport" vs "véhicules électriques")
+- Rejeter si zone géographique incorrecte (ex: Guadeloupe vs France)
+
+Réponds UNIQUEMENT par "OUI" ou "NON" (un seul mot)."""
+
+            response = await self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Tu es un expert en évaluation de pertinence de données."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=10
+            )
+            
+            answer = response.choices[0].message.content.strip().upper()
+            is_relevant = "OUI" in answer
+            
+            print(f"  🔍 Validation contenu: {'✅ Pertinent' if is_relevant else '❌ Non pertinent'}")
+            return is_relevant
+            
+        except Exception as e:
+            print(f"⚠️ Erreur validation contenu: {e}")
+            return True  # En cas d'erreur, accepter pour ne pas bloquer
     
     def _generate_mock_response(self, user_input: str) -> str:
         """Génère une réponse mock pour les tests"""
