@@ -214,8 +214,6 @@
 }
 
 .chatbox-input button {
-  background: linear-gradient(135deg, #0055b8 0%, #00338d 100%);
-  color: white;
   border: none;
   border-radius: 8px;
   padding: 10px 20px;
@@ -228,7 +226,12 @@
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.chatbox-input button:hover:not(:disabled) {
+.send-btn {
+  background: linear-gradient(135deg, #0055b8 0%, #00338d 100%);
+  color: white;
+}
+
+.send-btn:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 85, 184, 0.3);
 }

@@ -1,5 +1,8 @@
 .quantitative-analysis {
-  margin-top: 30px;
+  padding: 20px;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .sources-section {
@@ -56,17 +59,17 @@
 
 /* Datasets Section */
 .datasets-section {
-  background: white;
-  border-radius: 12px;
-  padding: 25px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  margin-top: 20px;
+  padding: 0;
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .datasets-section h3 {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   color: #2c3e50;
-  margin-bottom: 20px;
+  margin-bottom: 15px;
   font-weight: 600;
 }
 
@@ -74,8 +77,11 @@
   background: #f8f9fa;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 20px;
+  padding: 15px;
+  margin-bottom: 15px;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .dataset-header {
@@ -85,6 +91,9 @@
   margin-bottom: 15px;
   padding-bottom: 15px;
   border-bottom: 2px solid #0055B8;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .dataset-header h4 {
@@ -113,6 +122,70 @@
   color: #555;
 }
 
+.dataset-description {
+  color: #666;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 12px;
+  padding: 10px;
+  background: #f9f9f9;
+  border-left: 3px solid #0055B8;
+  border-radius: 4px;
+}
+
+.dataset-source-badge {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.dataset-link-external {
+  color: #0055B8;
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  margin-right: 15px;
+  transition: all 0.3s ease;
+  font-size: 0.9rem;
+}
+
+.dataset-link-external:hover {
+  color: #003d82;
+  transform: translateX(3px);
+}
+
+.download-btn {
+  background: linear-gradient(135deg, #00c853 0%, #00a346 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.download-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 200, 83, 0.4);
+}
+
+.download-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .dataset-link {
   color: #0055B8;
   text-decoration: none;
@@ -131,20 +204,107 @@
 
 .dataset-preview {
   margin-top: 20px;
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
-.dataset-preview h5 {
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #0055B8;
+}
+
+.preview-header h5 {
   color: #2c3e50;
-  margin-bottom: 10px;
+  margin: 0;
   font-size: 1rem;
+}
+
+.preview-stats {
+  display: flex;
+  gap: 15px;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.preview-stats span {
+  background: #f0f0f0;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 500;
 }
 
 .table-wrapper {
   overflow-x: auto;
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
+/* Aperçu rapide dans la carte dataset */
+.dataset-quick-preview {
+  margin: 20px 0;
+  padding: 15px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.dataset-quick-preview h5 {
+  margin: 0 0 10px 0;
+  color: #2c3e50;
+  font-size: 1rem;
+}
+
+.preview-table-compact {
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+  background: white;
+  font-size: 0.85rem;
+}
+
+.preview-table-compact thead {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.preview-table-compact th {
+  padding: 8px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.8rem;
+  border-bottom: 2px solid #0055B8;
+}
+
+.preview-table-compact tbody tr {
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.preview-table-compact tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.preview-table-compact td {
+  padding: 6px 8px;
+  color: #555;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8rem;
+}
+
+/* Table full preview (après téléchargement) */
 .preview-table {
   width: 100%;
   border-collapse: collapse;

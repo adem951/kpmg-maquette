@@ -99,6 +99,9 @@
 .left-panel {
   position: sticky;
   top: 120px;
+  max-width: 450px;
+  width: 100%;
+  overflow: hidden;
 }
 
 .welcome-section {
@@ -123,6 +126,9 @@
 
 .right-panel {
   min-height: 600px;
+  overflow: hidden;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .placeholder-content {
@@ -184,6 +190,68 @@
 
 .results-container {
   animation: fadeIn 0.5s ease-in;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Onglets d'analyse */
+.analysis-tabs {
+  display: flex;
+  gap: 0;
+  background: white;
+  border-radius: 12px 12px 0 0;
+  padding: 0;
+  margin-bottom: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  max-width: 100%;
+  width: 100%;
+}
+
+.tab-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 18px 20px;
+  border: none;
+  background: #f5f7fa;
+  color: #666;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-bottom: 3px solid transparent;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-btn:hover {
+  background: #e8ecf1;
+  color: #333;
+}
+
+.tab-btn.active {
+  background: white;
+  color: #0055b8;
+  border-bottom: 3px solid #0055b8;
+}
+
+.tab-btn:first-child.active {
+  border-radius: 12px 0 0 0;
+}
+
+.tab-btn:last-child.active {
+  border-radius: 0 12px 0 0;
+}
+
+.tab-content {
+  background: white;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  min-height: 400px;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 @keyframes fadeIn {

@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ChatBox.css';
 import { analyzeChatInput } from '../services/apiService';
+import { searchDatasets } from '../services/datasetService';
 
-const ChatBox = ({ onSendMessage }) => {
+const ChatBox = ({ onSendMessage, onDatasetsFound }) => {
   const [messages, setMessages] = useState([
     {
       id: 1,
@@ -189,8 +190,12 @@ const ChatBox = ({ onSendMessage }) => {
           placeholder="Décrivez votre besoin d'analyse de marché..."
           rows="2"
         />
-        <button onClick={handleSend} disabled={inputValue.trim() === ''}>
-          <span>Envoyer</span>
+        <button 
+          className="send-btn"
+          onClick={handleSend} 
+          disabled={inputValue.trim() === ''}
+        >
+          <span>Analyser</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
